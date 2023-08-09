@@ -43,6 +43,8 @@ struct GameCatalogGroup {
     uint8_t title_idx; /* string index */
     uint8_t num_children; /* how many direct children (=games) are in this group */
     uint8_t num_subgroups; /* how many sub-groups this group has */
+    uint8_t cursor_index; /* current cursor position */
+    uint8_t scroll_offset; /* current scroll offset */
     const uint8_t *children; /* <num_children> game indices, for indexing into cat->games */
     struct GameCatalogGroup *parent_group; /* parent group, or NULL if this is the root group */
     struct GameCatalogGroup *subgroups[]; /* <num_subgroups> pointers to subgroups */

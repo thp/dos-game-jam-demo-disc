@@ -113,7 +113,7 @@ for group in groupings:
 
 root_groups.append(make_group('All Games', list(range(len(games))), []))
 
-grouping = make_group('', [], root_groups)
+grouping = make_group('DGJ Demo Disc 2023', [], root_groups)
 
 # TODO: Sort games and/or sub-groups?
 

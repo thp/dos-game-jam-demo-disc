@@ -1,3 +1,5 @@
 *.o
 pcatalog
 gamectlg.dat
+menu
+dosmenu.exe

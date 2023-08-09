@@ -67,6 +67,8 @@ _game_catalog_read_groups_recursive(struct GameCatalog *cat, struct GameCatalogG
     result->title_idx = title_idx;
     result->num_children = num_children;
     result->num_subgroups = num_subgroups;
+    result->cursor_index = 0;
+    result->scroll_offset = 0;
 
     result->children = (const uint8_t *)cat->buf_ptr;
     cat->buf_ptr += num_children * sizeof(uint8_t);
