@@ -50,18 +50,22 @@ import pprint
 #pprint.pprint(values.keys())
 
 groupings = [
-    'Genre',
-    'Jam',
-    'Type',
-    'Author',
-    'Video',
-    'Multiplayer',
-    'Mouse',
-    'Joystick',
-    'Sound',
-    'CPU',
-    'Toolchain',
-    'Open Source',
+    ('Genre', 'Browse by genre'),
+    ('Jam', 'Browse by game jams'),
+    ('Type', 'Browse by release type'),
+    ('Author', 'Browse by authors'),
+
+    ('Video', 'Browse by video modes'),
+    ('Sound', 'Browse by sound card'),
+    ('CPU', 'Browse by CPU type'),
+
+    ('Toolchain', 'Browse by toolchains/SDKs'),
+
+    ('Mouse', 'Games with mouse support'),
+    ('Joystick', 'Games with joystick support'),
+
+    ('Multiplayer', 'Multiplayer games'),
+    ('Open Source', 'Open source games'),
 ]
 
 def split_value(group, values):
@@ -87,10 +91,53 @@ def make_group(title, children, subgroups):
 
 root_groups = []
 
-for group in groupings:
+JAMS_ORDERING = [
+    'CGA Jam 2017',
+    'OG DOS Game Jam',
+    'Jam #2 (Spring 2020)',
+    'MS DOS Game Jam #3',
+    'Fall 2020 Jam',
+    'Spring 2021',
+    'EOY Jam 2021',
+    'August 2022 Jam',
+    'EOY Jam 2022',
+    'June 2023',
+    'Other',
+]
+
+VIDEO_ORDERING = [
+    'Text',
+    'CGA',
+    'Tandy',
+    'EGA',
+    'VGA',
+    'VESA',
+]
+
+SOUND_ORDERING = [
+    'PC Speaker',
+    'Tandy',
+    'CMS',
+    'Adlib',
+    'Sound Blaster',
+    'MIDI',
+    'GUS',
+    'CDDA',
+]
+
+def special_sort(group, items):
+    if group == 'Jam':
+        return sorted(items, key=JAMS_ORDERING.index)
+    elif group == 'Video':
+        return sorted(items, key=VIDEO_ORDERING.index)
+    elif group == 'Sound':
+        return sorted(items, key=SOUND_ORDERING.index)
+    return sorted(items)
+
+for group, label in groupings:
     children = []
     subgroups = []
-    for value in sorted(split_value(group, values[group])):
+    for value in special_sort(group, split_value(group, values[group])):
         if value in ('', '?', '-'):
             continue
 
@@ -101,17 +148,25 @@ for group in groupings:
                 print('\t', game['Name'])
                 game_indices.append(game_idx)
 
-        if value == True:
+        if value == True or group == 'Joystick':
             # direct child stuff
             children.extend(game_indices)
         else:
             # submenu
+            if group == 'CPU':
+                if value == '16-bit':
+                    value = '16-bit CPUs (8088+)'
+                else:
+                    value = '32-bit CPUs (386+)'
+            if group == 'Video':
+                if value == 'Text':
+                    value = 'Text Mode'
             subgroup = make_group(value, game_indices, [])
             subgroups.append(subgroup)
 
-    root_groups.append(make_group(group, children, subgroups))
+    root_groups.append(make_group(label, children, subgroups))
 
-root_groups.append(make_group('All Games', list(range(len(games))), []))
+root_groups.insert(0, make_group('All Games', list(range(len(games))), []))
 
 grouping = make_group('DGJ Demo Disc 2023', [], root_groups)
 
@@ -166,10 +221,10 @@ urls = []
 def pack_strings(fp, strings):
     fp.write(struct.pack('<B', len(strings)))
     for string in strings:
-        length = len(string.encode()) + 1
+        length = len(string.encode('cp850')) + 1
         fp.write(struct.pack('<B', length))
     for string in strings:
-        fp.write(string.encode())
+        fp.write(string.encode('cp850'))
         fp.write(b'\0')
 
 def pack_index_list(fp, string_lists):

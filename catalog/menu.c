@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__DJGPP__)
 #include <sys/farptr.h>
+#include <sys/nearptr.h>
 #include <dos.h>
 #include <dpmi.h>
 #include <go32.h>
@@ -16,20 +16,60 @@
 #define KEY_HOME (0x100 | 71)
 #define KEY_END (0x100 | 79)
 #define ENTERKEY (13)
-#define printw(...) cprintf(__VA_ARGS__); cprintf("\r")
-#else
-#include <ncurses.h>
-#define ENTERKEY ('\n')
-#endif
 
 #include "gamectlg.h"
+
+#define SCREEN_WIDTH (80)
+#define SCREEN_HEIGHT (25)
+
+static uint8_t
+SCREEN_BUFFER[80*25][2];
+
+static uint8_t
+screen_x = 0;
+
+static uint8_t
+screen_y = 0;
+
+static uint8_t
+screen_attr = 7;
+
+static void
+screen_putch(char ch)
+{
+    if (ch == '\n') {
+        screen_x = 0;
+        if (screen_y <= SCREEN_HEIGHT) {
+            screen_y++;
+        }
+    } else {
+        SCREEN_BUFFER[SCREEN_WIDTH * screen_y + screen_x][0] = ch;
+        SCREEN_BUFFER[SCREEN_WIDTH * screen_y + screen_x][1] = screen_attr;
+        screen_x++;
+        if (screen_x == SCREEN_WIDTH) {
+            if (screen_y <= SCREEN_HEIGHT) {
+                screen_y++;
+            }
+            screen_x = 0;
+        }
+    }
+}
+
+static void
+screen_print(const char *msg)
+{
+    while (*msg) {
+        screen_putch(*msg++);
+    }
+}
 
 void
 print_parents_first(char *buf, struct GameCatalog *cat, struct GameCatalogGroup *group)
 {
     if (group->parent_group) {
         print_parents_first(buf, cat, group->parent_group);
-        strcat(buf, " / ");
+        char sep[] = { ' ', 0xaf, ' ', 0x00 };
+        strcat(buf, sep);
     }
 
     strcat(buf, cat->strings->d[group->title_idx]);
@@ -40,31 +80,131 @@ struct ChoiceDialogState {
     int offset;
 };
 
+void any_border()
+{
+    int save_attr = screen_attr;
+    screen_attr = (3 << 4) | 0xf;
+    screen_putch(0xba);
+    screen_attr = save_attr;
+}
+
+void right_shadow(int n)
+{
+    int save_attr = screen_attr;
+    screen_attr = (0 << 4) | 7;
+    for (int i=0; i<n; ++i) {
+        screen_putch(0xb0);
+    }
+    screen_attr = save_attr;
+}
+
+void right_border()
+{
+    any_border();
+    right_shadow(2);
+}
+
+void left_border()
+{
+    screen_x--;
+    any_border();
+}
+
 static int
 choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
-        const char *(*get_label_func)(int, void *), void *get_label_func_user_data)
+        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        const char *frame_label)
 {
-    int max_rows = 20;
+    int max_rows = 17;
     int page_size = 5;
+    int width = 40;
 
     while (1) {
-#if defined(__DJGPP__)
-        clrscr();
-#else
-        clear();
-        move(0, 0);
-#endif
-        printw("== %s ==\n", title);
+        memset(SCREEN_BUFFER, 0, sizeof(SCREEN_BUFFER));
+        screen_x = 0;
+        screen_y = 0;
+        screen_attr = (3 << 4) | 0;
+
+        for (int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; ++i) {
+            SCREEN_BUFFER[i][0] = 0xb2;
+            SCREEN_BUFFER[i][1] = (1 << 4) | 7;
+        }
+
+        for (int i=0; i<SCREEN_WIDTH; ++i) {
+            SCREEN_BUFFER[i][0] = ' ';
+            SCREEN_BUFFER[i][1] = (1 << 4) | 0;
+        }
+
+        if (*title) {
+            screen_y = 0;
+            screen_x = (SCREEN_WIDTH - strlen(title) - 2) / 2;
+
+            int save = screen_attr;
+            screen_attr = (0 << 4) | 0xf;
+            screen_putch(' ');
+            screen_print(title);
+            screen_putch(' ');
+            screen_attr = save;
+        }
+
+        int x = 4;
+        // To center the window on the screen:
+        //x = (SCREEN_WIDTH - width) / 2;
+        int y = 2;
+
+        screen_x = x;
+        screen_y = y; y += 1;
+
+        int save = screen_attr;
+        screen_attr = (3 << 4) | 0xf;
+        screen_x--;
+        screen_putch(0xc9);
+        for (int j=0; j<width+1; ++j) {
+            screen_putch(0xcd);
+        }
+        screen_putch(0xbb);
+
+        if (*frame_label) {
+            screen_x = x + (width - strlen(frame_label) - 2) / 2;
+
+            int save2 = screen_attr;
+            screen_attr = (0 << 4) | 0xf;
+            screen_putch(' ');
+            screen_print(frame_label);
+            screen_putch(' ');
+            screen_attr = save2;
+        }
+
+        screen_attr = save;
 
         if (get_text_func != NULL) {
             int k = 0;
             const char *line = get_text_func(k++, get_text_func_user_data);
             while (line != NULL) {
-                printw(" %s\n", line);
+                screen_x = x;
+                screen_y = y; y += 1;
+                left_border();
+                screen_print(" ");
+                screen_print(line);
+                for (int j=width-1-strlen(line); j>=0; --j) {
+                    screen_putch(' ');
+                }
+                right_border();
                 line = get_text_func(k++, get_text_func_user_data);
             }
+
+            screen_x = x;
+            screen_y = y; y += 1;
+            left_border();
+            for (int j=width; j>=0; --j) {
+                screen_putch(' ');
+            }
+            right_border();
         }
+
+        screen_x = x;
+        screen_y = y;
 
         if (state->cursor < state->offset) {
             state->offset = state->cursor;
@@ -78,48 +218,79 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
             end = n;
         }
 
-        if (begin > 0) {
-            printw("... (more) ...\n");
-        } else {
-            printw("\n");
-        }
+        int pre_y = screen_y;
 
         for (int i=begin; i<end; ++i) {
+            int save = screen_attr;
             if (i == state->cursor) {
-#if defined(__DJGPP__)
-                textcolor(BLACK);
-                textbackground(WHITE);
-#else
-                attron(A_REVERSE);
-#endif
+                screen_attr = (1 << 4) | 0xf;
             }
-            printw("   %s   \n", get_label_func(i, get_label_func_user_data) ?: "---");
+
+            screen_x = x;
+            screen_y = y; y += 1;
+
+            left_border();
+            screen_print(" ");
+            const char *line = get_label_func(i, get_label_func_user_data) ?: "";
+            screen_print(line);
+            for (int j=width-1-strlen(line); j>=0; --j) {
+                screen_putch(' ');
+            }
             if (i == state->cursor) {
-#if defined(__DJGPP__)
-                textcolor(LIGHTGRAY);
-                textbackground(BLACK);
-#else
-                attroff(A_REVERSE);
-#endif
+                screen_attr = save;
             }
+            right_border();
+        }
+
+        int post_y = screen_y;
+
+        if (begin > 0) {
+            int save_y = screen_y;
+            const char *pre = "( more --^ )";
+            screen_x = x + width - strlen(pre);
+            screen_y = pre_y;
+            int save = screen_attr;
+            screen_attr = (2 << 4) | 8;
+            screen_print(pre);
+            screen_attr = save;
+            screen_x = x;
+            screen_y = save_y;
         }
 
         if (end < n) {
-            printw("... (more) ...\n");
-        } else {
-            printw("\n");
+            const char *post = "( more --v )";
+            screen_x = x + width - strlen(post);
+            int save = screen_attr;
+            screen_attr = (2 << 4) | 8;
+            screen_print(post);
+            screen_x = x;
         }
 
-#if !defined(__DJGPP__)
-        refresh();
-#endif
+        screen_x = x;
+        screen_y = y; y += 1;
+
+        save = screen_attr;
+        screen_attr = (3 << 4) | 0xf;
+        screen_x--;
+        screen_putch(0xc8);
+        for (int j=0; j<width+1; ++j) {
+            screen_putch(0xcd);
+        }
+        screen_putch(0xbc);
+        right_shadow(2);
+
+        screen_x = x + 1;
+        screen_y = y; y += 1;
+        right_shadow(width + 3);
+
+        short *screen = (short *)(__djgpp_conventional_base + 0xb8000);
+        memcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
 
         int ch = getch();
-#if defined(__DJGPP__)
         if (ch == 0) {
             ch = 0x100 | getch();
         }
-#endif
+
         if (ch == KEY_NPAGE) {
             if (state->cursor >= n - page_size) {
                 state->cursor = n - 1;
@@ -146,6 +317,9 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
             }
         } else if (ch == ENTERKEY) {
             return state->cursor;
+        } else if (ch == 27) {
+            state->cursor = 0;
+            return state->cursor;
         }
     }
 
@@ -166,17 +340,19 @@ get_label_group(int i, void *user_data)
 
     if (i == 0) {
         if (ud->group->parent_group != NULL) {
-            return " ^UP";
+            return "(..)";
         } else {
-            return " -QUIT";
+            return "Exit to DOS";
         }
     } else {
-        if (i <= ud->group->num_children) {
-            return ud->cat->names->d[ud->group->children[i-1]];
+        i -= 1;
+
+        if (i < ud->group->num_children) {
+            return ud->cat->names->d[ud->group->children[i]];
         }
 
-        if (i <= ud->group->num_subgroups) {
-            struct GameCatalogGroup *subgroup = ud->group->subgroups[i-1];
+        if (i < ud->group->num_subgroups) {
+            struct GameCatalogGroup *subgroup = ud->group->subgroups[i];
             sprintf(tmp_buf, "%s (%d)",
                     ud->cat->strings->d[subgroup->title_idx],
                     subgroup->num_children + subgroup->num_subgroups);
@@ -214,7 +390,7 @@ const char *
 get_label_game(int i, void *user_data)
 {
     if (i == 0) {
-        return " ^BACK";
+        return "(..)";
     } else if (i == 1) {
         return "Launch Game";
     }
@@ -230,7 +406,6 @@ static struct {
 static void
 dos_ipc_append(const char *string)
 {
-#if defined(__DJGPP__)
     if (dos_ipc.their_ds != 0) {
         while (*string) {
             _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, *string);
@@ -239,9 +414,6 @@ dos_ipc_append(const char *string)
         }
         _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, '\0');
     }
-#else
-    // TODO
-#endif
 }
 
 int main(int argc, char *argv[])
@@ -253,13 +425,8 @@ int main(int argc, char *argv[])
         }
     }
 
-#if !defined(__DJGPP__)
-    initscr();
-    keypad(stdscr, TRUE);
-    curs_set(0);
-#else
+    __djgpp_nearptr_enable();
     _setcursortype(_NOCURSOR);
-#endif
 
     FILE *fp = fopen("gamectlg.dat", "rb");
     fseek(fp, 0, SEEK_END);
@@ -278,16 +445,20 @@ int main(int argc, char *argv[])
     struct GameCatalogGroup *here = cat->grouping;
     int game = -1;
     while (1) {
+        char buf[512];
+        strcpy(buf, "");
+
         if (game != -1) {
+            print_parents_first(buf, cat, here);
+
             struct GetTextGameUserData gtgud = { cat, game };
 
             struct ChoiceDialogState cds = { 0, 0 };
-            int selection = choice_dialog(cat->names->d[game], &cds, 2, get_text_game, &gtgud, get_label_game, NULL);
+            int selection = choice_dialog(buf, &cds, 2, get_text_game, &gtgud, get_label_game, NULL, cat->names->d[game]);
 
             if (selection == 0) {
                 game = -1;
             } else if (selection == 1) {
-#if defined(__DJGPP__)
                 if ((cat->games[game].flags & FLAG_HAS_END_SCREEN) != 0) {
                     dos_ipc_append("@");
                 } else {
@@ -296,18 +467,19 @@ int main(int argc, char *argv[])
                 dos_ipc_append("DEMO2023/");
                 dos_ipc_append(cat->strings->d[cat->games[game].run_idx]);
 
+                textmode(C80);
+
                 return 0;
-#endif
             }
         } else {
-            char buf[512];
-            strcpy(buf, "");
-            print_parents_first(buf, cat, here);
+            if (here->parent_group) {
+                print_parents_first(buf, cat, here->parent_group);
+            }
 
             struct GetLabelGroupUserData glgud = { cat, here };
             int max = (here->num_children ? here->num_children : here->num_subgroups);
             struct ChoiceDialogState cds = { here->cursor_index, here->scroll_offset };
-            int selection = choice_dialog(buf, &cds, max + 1, NULL, NULL, get_label_group, &glgud);
+            int selection = choice_dialog(buf, &cds, max + 1, NULL, NULL, get_label_group, &glgud, cat->strings->d[here->title_idx]);
             here->cursor_index = cds.cursor;
             here->scroll_offset = cds.offset;
 
@@ -318,13 +490,14 @@ int main(int argc, char *argv[])
                     break;
                 }
             } else {
+                selection -= 1;
                 if (here->num_subgroups) {
-                    if (selection > 0 && selection <= here->num_subgroups) {
-                        here = here->subgroups[selection-1];
+                    if (selection >= 0 && selection < here->num_subgroups) {
+                        here = here->subgroups[selection];
                     }
                 } else {
-                    if (selection > 0 && selection <= here->num_children) {
-                        game = here->children[selection-1];
+                    if (selection >= 0 && selection < here->num_children) {
+                        game = here->children[selection];
                     }
                 }
             }
@@ -333,15 +506,8 @@ int main(int argc, char *argv[])
 
     game_catalog_free(cat);
 
-#if !defined(__DJGPP__)
-    endwin();
-#else
     textmode(C80);
-#endif
-
-#if defined(__DJGPP__)
     dos_ipc_append("exit");
-#endif
 
     return 0;
 }

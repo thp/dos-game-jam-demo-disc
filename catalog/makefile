@@ -1,4 +1,4 @@
-all: gamectlg.dat pcatalog menu dosmenu.exe
+all: gamectlg.dat pcatalog dosmenu.exe
 
 gamectlg.dat: csv2dat.py gamectlg.csv
 	python3 $^ $@
@@ -6,13 +6,10 @@ gamectlg.dat: csv2dat.py gamectlg.csv
 pcatalog: pcatalog.o gamectlg.o
 	$(CC) -o $@ $^
 
-menu: menu.o gamectlg.o
-	$(CC) -o $@ $^ -lncurses
-
 dosmenu.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ menu.c gamectlg.c
+	i586-pc-msdosdjgpp-gcc -o $@ $^
 
 clean:
-	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o menu.o menu dosmenu.exe
+	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o dosmenu.exe
 
 .PHONY: clean
