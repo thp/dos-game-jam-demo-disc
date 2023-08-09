@@ -1,6 +1,7 @@
 import collections
 import struct
 import argparse
+import csv
 
 #
 # DOS Game Jam Demo Disc Game Catalog Format
@@ -12,39 +13,36 @@ parser.add_argument('infile', type=str, help='Filename of CSV file')
 parser.add_argument('outfile', type=str, help='Filename of DAT file')
 args = parser.parse_args()
 
-header = None
 values = collections.defaultdict(set)
 games = []
 
 with open(args.infile) as fp:
-    for line in fp:
-        parts = line.lstrip('\ufeff').rstrip('\n').split(';')
-        if header is None:
-            header = parts
-        else:
-            d = dict(zip(header, parts))
-            d['Kilobytes'] = int(d['Kilobytes'] or -1)
-            d['Visible'] = (d['Visible'] == 'Y')
-            d['Keyboard'] = (d['Keyboard'] == 'Y')
-            d['Multiplayer'] = (d['Multiplayer'] == 'Y')
-            d['Keyboard'] = (d['Keyboard'] == 'Y')
-            d['EndScreen'] = (d['EndScreen'] == 'Y')
-            d['Open Source'] = (d['Open Source'] == 'Y')
-            d['Video'] = tuple(d['Video'].split(', '))
-            d['Sound'] = tuple(x for x in d['Sound'].split(', ') if x != '-')
-            d['Author'] = tuple(d['Author'].split(', '))
-            d['Toolchain'] = tuple(d['Toolchain'].split(', '))
-            d['CPU'] = d['Bits'] + '-bit'
-            del d['Bits']
+    reader = csv.DictReader(fp)
+    for parts in reader:
+        print(parts)
+        d = dict(parts)
+        d['Kilobytes'] = int(d['Kilobytes'] or -1)
+        d['Visible'] = (d['Visible'] == 'Y')
+        d['Keyboard'] = (d['Keyboard'] == 'Y')
+        d['Multiplayer'] = (d['Multiplayer'] == 'Y')
+        d['Keyboard'] = (d['Keyboard'] == 'Y')
+        d['EndScreen'] = (d['EndScreen'] == 'Y')
+        d['Open Source'] = (d['Open Source'] == 'Y')
+        d['Video'] = tuple(d['Video'].split(', '))
+        d['Sound'] = tuple(x for x in d['Sound'].split(', ') if x != '-')
+        d['Author'] = tuple(d['Author'].split(', '))
+        d['Toolchain'] = tuple(d['Toolchain'].split(', '))
+        d['CPU'] = d['Bits'] + '-bit'
+        del d['Bits']
 
-            if not d['Visible']:
-                print('Skip:', d['Name'])
-                continue
+        if not d['Visible']:
+            print('Skip:', d['Name'])
+            continue
 
-            #print(d)
-            games.append(d)
-            for k, v in d.items():
-                values[k].add(v)
+        print(d)
+        games.append(d)
+        for k, v in d.items():
+            values[k].add(v)
 
 import pprint
 #pprint.pprint(values)
