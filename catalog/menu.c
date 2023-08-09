@@ -116,9 +116,40 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
         const char *frame_label)
 {
-    int max_rows = 17;
+    int max_rows = 18;
     int page_size = 5;
-    int width = 40;
+    int width = 20;
+    int x_padding = 3;
+
+    // Determine minimum width
+
+    {
+        int len = strlen(frame_label) + x_padding + 5;
+        if (width < len) {
+            width = len;
+        }
+    }
+
+    if (get_text_func != NULL) {
+        int k = 0;
+        const char *line = get_text_func(k++, get_text_func_user_data);
+        while (line != NULL) {
+            int len = strlen(line) + x_padding;
+            if (width < len) {
+                width = len;
+            }
+
+            line = get_text_func(k++, get_text_func_user_data);
+        }
+    }
+
+    for (int i=0; i<n; ++i) {
+        const char *line = get_label_func(i, get_label_func_user_data) ?: "";
+        int len = strlen(line) + x_padding;
+        if (width < len) {
+            width = len;
+        }
+    }
 
     while (1) {
         memset(SCREEN_BUFFER, 0, sizeof(SCREEN_BUFFER));
@@ -182,15 +213,26 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
             int k = 0;
             const char *line = get_text_func(k++, get_text_func_user_data);
             while (line != NULL) {
+                int save_attr = screen_attr;
                 screen_x = x;
                 screen_y = y; y += 1;
                 left_border();
-                screen_print(" ");
+                int left_padding = 1;
+                if (k == 1) {
+                    left_padding = (width + 1 - strlen(line)) / 2;
+                    screen_attr &= (0xf << 4);
+                    screen_attr |= 0xb;
+                }
+                for (int pad=0; pad<left_padding; ++pad) {
+                    screen_putch(' ');
+                }
                 screen_print(line);
-                for (int j=width-1-strlen(line); j>=0; --j) {
+                screen_attr = save_attr;
+                for (int j=width-left_padding-strlen(line); j>=0; --j) {
                     screen_putch(' ');
                 }
                 right_border();
+
                 line = get_text_func(k++, get_text_func_user_data);
             }
 
@@ -206,10 +248,16 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         screen_x = x;
         screen_y = y;
 
-        if (state->cursor < state->offset) {
+        if (state->cursor <= state->offset) {
             state->offset = state->cursor;
-        } else if (state->cursor > state->offset + max_rows - 1) {
+            if (state->cursor > 0) {
+                state->offset--;
+            }
+        } else if (state->cursor >= state->offset + max_rows - 1) {
             state->offset = state->cursor - max_rows + 1;
+            if (state->offset < n - max_rows) {
+                state->offset++;
+            }
         }
 
         int begin = state->offset;
@@ -371,17 +419,77 @@ struct GetTextGameUserData {
 const char *
 get_text_game(int i, void *user_data)
 {
+    static char fmt_buf[80];
+
     struct GetTextGameUserData *ud = user_data;
+
+    const struct GameCatalogGame *game = &(ud->cat->games[ud->game]);
 
     if (i == 0) {
         return ud->cat->descriptions->d[ud->game];
-    } else if (i == 1) {
-        return ud->cat->urls->d[ud->game];
-    } else if (i == 2) {
-        return ud->cat->strings->d[ud->cat->games[ud->game].jam_idx];
-    } else if (i == 3) {
-        return ud->cat->strings->d[ud->cat->games[ud->game].genre_idx];
     }
+    --i;
+
+    if (i == 0) {
+        return "";
+    }
+    --i;
+
+    struct GameCatalogStringList *authors_idx = ud->cat->string_lists->d + game->author_list_idx;
+    for (int j=0; j<authors_idx->n; ++j) {
+        if (i == 0) {
+            if (j == 0) {
+                sprintf(fmt_buf, "by ");
+            } else {
+                sprintf(fmt_buf, "   ");
+            }
+            sprintf(fmt_buf + 3, "%s%s", ud->cat->strings->d[authors_idx->d[j]],
+                    (j == authors_idx->n - 1) ? "" : (((j == authors_idx->n - 2) ? " and" : ",")));
+            return fmt_buf;
+        }
+        --i;
+    }
+
+    if (i == 0) {
+        return ud->cat->urls->d[ud->game];
+    }
+    --i;
+
+    if (i == 0) {
+        sprintf(fmt_buf, "Jam: %s, Genre: %s",
+                ud->cat->strings->d[game->jam_idx],
+                ud->cat->strings->d[game->genre_idx]);
+        return fmt_buf;
+    }
+    --i;
+
+    if (i == 0) {
+        sprintf(fmt_buf, "%s, %s",
+                (game->flags & FLAG_IS_32_BITS) ? "386+" : "8088+",
+                (game->flags & FLAG_IS_MULTIPLAYER) ? "multiplayer" : "single-player",
+                ud->cat->strings->d[game->genre_idx]);
+
+        if ((game->flags & FLAG_MOUSE_SUPPORTED) != 0) {
+            if ((game->flags & FLAG_MOUSE_REQUIRED) != 0) {
+                strcat(fmt_buf, ", requires mouse");
+            } else {
+                strcat(fmt_buf, ", supports mouse");
+            }
+        }
+
+        if ((game->flags & FLAG_IS_OPEN_SOURCE) != 0) {
+            strcat(fmt_buf, ", open source");
+        }
+
+        struct GameCatalogStringList *video_idx = ud->cat->string_lists->d + game->video_list_idx;
+        for (int j=0; j<video_idx->n; ++j) {
+            strcat(fmt_buf, ", ");
+            strcat(fmt_buf, ud->cat->strings->d[video_idx->d[j]]);
+        }
+
+        return fmt_buf;
+    }
+    --i;
 
     return NULL;
 }
