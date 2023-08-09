@@ -167,11 +167,9 @@ urls = []
 
 def pack_strings(fp, strings):
     fp.write(struct.pack('<B', len(strings)))
-    offset = 0
     for string in strings:
-        fp.write(struct.pack('<H', offset))
-        offset += len(string.encode()) + 1
-    fp.write(struct.pack('<H', offset))
+        length = len(string.encode()) + 1
+        fp.write(struct.pack('<B', length))
     for string in strings:
         fp.write(string.encode())
         fp.write(b'\0')

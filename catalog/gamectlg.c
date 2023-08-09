@@ -15,14 +15,6 @@ _game_catalog_read_u8(struct GameCatalog *cat)
     return result;
 }
 
-static uint16_t
-_game_catalog_read_u16(struct GameCatalog *cat)
-{
-    uint16_t lo = _game_catalog_read_u8(cat);
-    uint16_t hi = _game_catalog_read_u8(cat);
-    return (hi << 8) | lo;
-}
-
 static struct GameCatalogStrings *
 _game_catalog_read_string_list(struct GameCatalog *cat)
 {
@@ -32,14 +24,12 @@ _game_catalog_read_string_list(struct GameCatalog *cat)
     result->n = n;
 
     // one additional offset that points to the end
-    const char *strings_begin = cat->buf_ptr + (n + 1) * sizeof(uint16_t);
+    const char *strings_begin = cat->buf_ptr + n * sizeof(uint8_t);
+    uint16_t offset = 0;
     for (int i=0; i<n; ++i) {
-        uint16_t offset = _game_catalog_read_u16(cat);
         result->d[i] = strings_begin + offset;
+        offset += _game_catalog_read_u8(cat);
     }
-
-    // last offset is the size of the string table
-    uint16_t offset = _game_catalog_read_u16(cat);
 
     // skip over string table (consumed above)
     cat->buf_ptr += offset;
