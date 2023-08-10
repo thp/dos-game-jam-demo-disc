@@ -4,8 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char
-ipc_buffer[512];
+#include "gamectlg.h"
+#include "ipc.h"
+#include "vgautil.h"
+
+static struct IPCBuffer
+ipc_buffer;
 
 int
 run_command(char *cmd, char *args)
@@ -32,10 +36,10 @@ run_command(char *cmd, char *args)
     segread(&segs);
 
     char fcb1[37];
-    memset(&fcb1, 0, sizeof(fcb1));
+    memset(fcb1, 0, sizeof(fcb1));
 
     char fcb2[37];
-    memset(&fcb2, 0, sizeof(fcb2));
+    memset(fcb2, 0, sizeof(fcb2));
 
     struct LoadExec {
         short wEnvSeg;
@@ -46,8 +50,8 @@ run_command(char *cmd, char *args)
 
     le.wEnvSeg = 0;
     le.pfCmdTail = MK_FP(segs.ds, (unsigned)cmdTail);
-    le.pfrFCB_1 = MK_FP(segs.ds, &fcb1);
-    le.pfrFCB_2 = MK_FP(segs.ds, &fcb2);
+    le.pfrFCB_1 = MK_FP(segs.ds, fcb1);
+    le.pfrFCB_2 = MK_FP(segs.ds, fcb2);
 
     // execute subprocess
     union REGS regs;
@@ -61,19 +65,12 @@ run_command(char *cmd, char *args)
     return (regs.x.cflag == 0) ? 0 : regs.x.ax;
 }
 
-int rungame(char *buffer)
+int rungame()
 {
-    int have_endscreen = 0;
-
-    if (buffer[0] == '@') {
-        have_endscreen = 1;
-    }
+    char *buffer = ipc_buffer.cmdline;
 
     struct SREGS segs;
     segread(&segs);
-
-    // skip over mode char (' ' or '@')
-    ++buffer;
 
     char *dir = buffer;
     char *file = buffer;
@@ -113,10 +110,10 @@ int rungame(char *buffer)
     int error = run_command(file, args);
 
     if (error) {
-        printf("Failed to launch dir=%s, file=%s, error=%x\n", dir, file, error);
+        printf("Failed to launch\n\tdir='%s'\n\tfile='%s'\n\targs='%s'\n\terror=%x\n", dir, file, args, error);
         getch();
     } else {
-        if (have_endscreen) {
+        if ((ipc_buffer.game_flags & FLAG_HAS_END_SCREEN) != 0) {
             // show end screen
             printf("(press any key to return to menu)");
             fflush(stdout);
@@ -134,43 +131,55 @@ int rungame(char *buffer)
 
 int runmenu()
 {
-    int my_ds = _DS;
-    int my_offset = (unsigned)ipc_buffer;
+    struct SREGS segs;
+    segread(&segs);
+
+    int my_ds = segs.ds;
+    int my_offset = (unsigned)&ipc_buffer;
 
     const char HEXDIGITS[] = "0123456789ABCDEF";
 
-    char args[] = {
-        HEXDIGITS[(my_ds >> 12)&0xF],
-        HEXDIGITS[(my_ds >> 8)&0xF],
-        HEXDIGITS[(my_ds >> 4)&0xF],
-        HEXDIGITS[(my_ds >> 0)&0xF],
-        ':',
-        HEXDIGITS[(my_offset >> 12)&0xF],
-        HEXDIGITS[(my_offset >> 8)&0xF],
-        HEXDIGITS[(my_offset >> 4)&0xF],
-        HEXDIGITS[(my_offset >> 0)&0xF],
-        '\0',
-    };
+    char args[10];
+
+    char *dest = args;
+    *dest++ = HEXDIGITS[(my_ds >> 12)&0xF];
+    *dest++ = HEXDIGITS[(my_ds >> 8)&0xF];
+    *dest++ = HEXDIGITS[(my_ds >> 4)&0xF];
+    *dest++ = HEXDIGITS[(my_ds >> 0)&0xF];
+    *dest++ = ':';
+    *dest++ = HEXDIGITS[(my_offset >> 12)&0xF];
+    *dest++ = HEXDIGITS[(my_offset >> 8)&0xF];
+    *dest++ = HEXDIGITS[(my_offset >> 4)&0xF];
+    *dest++ = HEXDIGITS[(my_offset >> 0)&0xF];
+    *dest++ = '\0';
 
     return (run_command("menu.exe", args) == 0);
 }
 
+
 int main()
 {
-    while (1) {
-        if (!runmenu()) {
-            printf("Cannot execute menu...\n");
-            return 1;
-        }
+    int result = 0;
 
-        if (strcmp(ipc_buffer, "exit") == 0) {
-            printf("Exiting...\n");
+    while (1) {
+        textmode_reset();
+
+        if (!runmenu()) {
+            result = 1;
             break;
         }
 
-        clrscr();
-        rungame(ipc_buffer);
+        textmode_reset();
+
+        if (ipc_buffer.request == IPC_EXIT) {
+            break;
+        } else if (ipc_buffer.request == IPC_RUN_GAME) {
+            rungame();
+        }
     }
 
-    return 0;
+    textmode_reset();
+    printf("Exiting, result = %d\n", result);
+
+    return result;
 }

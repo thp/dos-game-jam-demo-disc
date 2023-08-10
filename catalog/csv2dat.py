@@ -9,12 +9,16 @@ import csv
 #
 
 parser = argparse.ArgumentParser(description='Convert CSV game list to datafile')
+parser.add_argument('--verbose', action='store_true', help='Be verbose')
 parser.add_argument('infile', type=str, help='Filename of CSV file')
 parser.add_argument('outfile', type=str, help='Filename of DAT file')
 args = parser.parse_args()
 
 values = collections.defaultdict(set)
 games = []
+
+if not args.verbose:
+    print = lambda *args: ...
 
 with open(args.infile) as fp:
     reader = csv.DictReader(fp)
@@ -34,6 +38,8 @@ with open(args.infile) as fp:
         d['Toolchain'] = tuple(d['Toolchain'].split(', '))
         d['CPU'] = d['Bits'] + '-bit'
         del d['Bits']
+        # Normalize paths to forward slash
+        d['Run'] = d['Run'].replace('\\', '/')
 
         if not d['Visible']:
             print('Skip:', d['Name'])
