@@ -26,6 +26,11 @@ struct vid_gfxops {
 	void (*line)(int x0, int y0, int x1, int y1, uint32_t color);
 	void (*hline)(int x, int y, int len, uint32_t color);
 	void (*vline)(int x, int y, int len, uint32_t color);
+
+	void (*cursorpos)(int x, int y);
+	void (*cursorshape)(int xsz, int ysz, int hotx, int hoty, void *img, void *mask);
+
+	void (*endfrm)(void);
 };
 
 struct vid_driver {
@@ -76,5 +81,10 @@ void vid_blit(int x, int y, int w, int h, void *src, int pitch);
 void vid_blitfb(void *fb, int pitch);
 void vid_blit32(int x, int y, int w, int h, uint32_t *src, int pitch);
 void vid_blitfb32(uint32_t *fb, int pitch);
+
+void vid_cursorpos(int x, int y);
+void vid_cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask);
+
+void vid_endfrm(void);
 
 #endif	/* VIDSYS_VIDEO_H_ */

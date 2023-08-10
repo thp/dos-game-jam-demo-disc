@@ -106,6 +106,8 @@ int main(int argc, char **argv)
 			mdx = mx - prev_mx;
 			mdy = my - prev_my;
 
+			vid_cursorpos(mx, my);
+
 			if(bndiff & 1) app_mouse(0, bnstate & 1, mx, my);
 			if(bndiff & 2) app_mouse(1, bnstate & 2, mx, my);
 			if(bndiff & 4) app_mouse(3, bnstate & 4, mx, my);
@@ -164,6 +166,8 @@ void app_swap_buffers(void)
 		}
 		dirty_valid = 0;
 	}
+
+	vid_endfrm();
 }
 
 void app_quit(void)

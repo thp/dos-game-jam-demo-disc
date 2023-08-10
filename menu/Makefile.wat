@@ -5,7 +5,9 @@ dosobj = src/dos/main.obj src/dos/keyb.obj src/dos/mouse.obj src/dos/timer.obj &
 appobj = src/app.obj src/logger.obj src/menuscr.obj
 rtkobj = src/rtk.obj src/rtk_draw.obj
 
-incpath = -Isrc -Isrc/dos
+incpath = -Isrc -Isrc/dos -Ilibs/imago/src
+libpath = libpath libs/dos
+libimago = libs/dos/imago.lib
 !else
 dosobj = src\dos\main.obj src\dos\keyb.obj src\dos\mouse.obj src\dos\timer.obj &
 	src\dos\cdpmi.obj src\dos\vidsys.obj src\dos\drv_vga.obj src\dos\drv_vbe.obj &
@@ -13,20 +15,23 @@ dosobj = src\dos\main.obj src\dos\keyb.obj src\dos\mouse.obj src\dos\timer.obj &
 appobj = src\app.obj src\logger.obj src\menuscr.obj
 rtkobj = src\rtk.obj src\rtk_draw.obj
 
-incpath = -Isrc -Isrc\dos
+incpath = -Isrc -Isrc\dos -Ilibs\imago\src
+libpath = libpath libs\dos
+libimago = libs\dos\imago.lib
 !endif
 
 obj = $(dosobj) $(appobj) $(rtkobj)
 bin = menu.exe
 
 opt = -otexan
+libs = $(libimago)
 
 AS = nasm
 CC = wcc386
 LD = wlink
 ASFLAGS = -fobj
 CFLAGS = -d3 $(opt) $(def) -s -zq -bt=dos $(incpath)
-#LDFLAGS = option map $(libpath) library { $(libs) }
+LDFLAGS = option map $(libpath) library { $(libs) }
 
 $(bin): cflags.occ $(obj) $(libs)
 	%write objects.lnk $(obj)
@@ -36,7 +41,7 @@ $(bin): cflags.occ $(obj) $(libs)
 .c: src;src/dos
 .asm: src;src/dos
 
-cflags.occ: Makefile
+cflags.occ: Makefile.wat
 	%write $@ $(CFLAGS)
 
 .c.obj: .autodepend
@@ -51,6 +56,11 @@ clean: .symbolic
 	rm -f $(obj)
 	rm -f $(bin)
 	rm -f cflags.occ *.lnk
+
+$(libimago):
+	cd libs/imago
+	wmake -f Makefile.wat
+	cd ../..
 !else
 clean: .symbolic
 	del src\*.obj
@@ -59,4 +69,9 @@ clean: .symbolic
 	del *.lnk
 	del cflags.occ
 	del $(bin)
+
+$(libimago):
+	cd libs\imago
+	wmake -f Makefile.wat
+	cd ..\..
 !endif

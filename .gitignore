@@ -18,3 +18,7 @@ menu/data/
 */core
 *.exe
 *.EXE
+*.lbc
+*.LBC
+*.map
+*.MAP

@@ -277,3 +277,20 @@ void vid_blitfb32(uint32_t *src, int pitch)
 		break;
 	}
 }
+
+void vid_cursorpos(int x, int y)
+{
+	cur_mode->ops.cursorpos(x, y);
+}
+
+void vid_cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask)
+{
+	if(cur_mode->ops.cursorshape) {
+		cur_mode->ops.cursorshape(xsz, ysz, hotx, hoty, img, mask);
+	}
+}
+
+void vid_endfrm(void)
+{
+	cur_mode->ops.endfrm();
+}

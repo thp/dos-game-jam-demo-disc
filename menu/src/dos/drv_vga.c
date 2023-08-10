@@ -21,6 +21,10 @@ static void clear8(uint32_t color);
 static void blitfb8(void *fb, int pitch);
 static void fill8(int x, int y, int w, int h, uint32_t color);
 
+static void cursorpos(int x, int y);
+static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask);
+
+static void endfrm(void);
 
 static struct vid_driver drv;
 static struct vid_drvops drvops = {init, cleanup, setmode, curmode};
@@ -31,9 +35,11 @@ static struct vid_modeinfo modes[] = {
 };
 
 static struct vid_gfxops gfxops_mode12h = {
-	0, 0, setpal4, getpal4, vid_vsync, clear4, blitfb4, 0, fill4 };
+	0, 0, setpal4, getpal4, vid_vsync, clear4, blitfb4, 0, fill4, 0, 0, 0, 0,
+	cursorpos, cursorshape, endfrm };
 static struct vid_gfxops gfxops_mode13h = {
-	0, 0, vga_setpal, vga_getpal, vid_vsync, clear8, blitfb8, 0, fill8 };
+	0, 0, vga_setpal, vga_getpal, vid_vsync, clear8, blitfb8, 0, fill8, 0, 0, 0, 0,
+	cursorpos, cursorshape, endfrm };
 
 void vid_register_vga(void)
 {
@@ -53,7 +59,7 @@ void vid_register_vga(void)
 		case 0x3:
 			modes[i].vmem_addr = 0xb8000;
 			break;
-				
+
 		case 0x13:
 			modes[i].ops = gfxops_mode13h;
 			break;
@@ -170,4 +176,17 @@ static void fill8(int x, int y, int w, int h, uint32_t color)
 		memset(fbptr, color, w);
 		fbptr += 320;
 	}
+}
+
+static void cursorpos(int x, int y)
+{
+}
+
+static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask)
+{
+}
+
+
+static void endfrm(void)
+{
 }

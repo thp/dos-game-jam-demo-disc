@@ -31,6 +31,12 @@ static void blitfb_lfb(void *fb, int pitch);
 static void blitfb_banked(void *fb, int pitch);
 static void flip(int vsync);
 
+static void cursorpos(int x, int y);
+static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask);
+
+static void endfrm(void);
+
+
 static struct vid_driver drv;
 static struct vid_drvops drvops = {init, cleanup, setmode, getmode};
 static unsigned int vbe_ver;
@@ -38,6 +44,8 @@ static unsigned int vbe_ver;
 static int cur_mode;
 static struct vid_modeinfo *cur_mi;
 static int cur_pgsize;
+
+static int cur_x, cur_y, prev_x, prev_y;
 
 
 void vid_register_vbe(void)
@@ -315,6 +323,9 @@ static int conv_vbeinfo(int mode, struct vid_modeinfo *mi, struct vbe_mode_info 
 	mi->ops.blit = 0;
 	mi->ops.blitfb = 0;
 	mi->ops.flip = flip;
+	mi->ops.cursorpos = cursorpos;
+	mi->ops.cursorshape = cursorshape;
+	mi->ops.endfrm = endfrm;
 	return 0;
 }
 
@@ -441,4 +452,38 @@ static void blitfb_banked(void *fb, int pitch)
 static void flip(int vsync)
 {
 	/* TODO */
+}
+
+static void cursorpos(int x, int y)
+{
+	prev_x = cur_x;
+	prev_y = cur_y;
+	cur_x = x;
+	cur_y = y;
+}
+
+static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask)
+{
+}
+
+static void draw_cursor(int x, int y)
+{
+	unsigned char *fb8;
+
+	switch(cur_mi->bpp) {
+	case 8:
+		fb8 = (unsigned char*)vid_vmem + y * cur_mi->pitch + x;
+		*fb8 ^= 0xff;
+		break;
+	}
+}
+
+static void endfrm(void)
+{
+	if(cur_x < 0) return;
+
+	if(prev_x >= 0) {
+		draw_cursor(prev_x, prev_y);
+	}
+	draw_cursor(cur_x, cur_y);
 }

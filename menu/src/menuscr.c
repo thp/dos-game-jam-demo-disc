@@ -69,6 +69,10 @@ static void menu_display(void)
 
 static void menu_keyb(int key, int press)
 {
+	if(rtk_input_key(gui, key, press)) {
+		return;
+	}
+
 	if(!press) return;
 
 	switch(key) {
@@ -80,8 +84,14 @@ static void menu_keyb(int key, int press)
 
 static void menu_mouse(int bn, int press, int x, int y)
 {
+	if(rtk_input_mbutton(gui, bn, press, x, y)) {
+		return;
+	}
 }
 
 static void menu_motion(int x, int y)
 {
+	if(rtk_input_mmotion(gui, x, y)) {
+		return;
+	}
 }
