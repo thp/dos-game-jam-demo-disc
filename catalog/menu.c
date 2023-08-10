@@ -78,10 +78,10 @@ struct ChoiceDialogState {
     int offset;
 };
 
-void any_border()
+void any_border(int fg, int bg)
 {
     int save_attr = screen_attr;
-    screen_attr = (3 << 4) | 0xf;
+    screen_attr = (bg << 4) | fg;
     screen_putch(0xba);
     screen_attr = save_attr;
 }
@@ -96,26 +96,238 @@ void right_shadow(int n)
     screen_attr = save_attr;
 }
 
-void right_border()
+void right_border(int fg, int bg)
 {
-    any_border();
+    any_border(fg, bg);
     right_shadow(2);
 }
 
-void left_border()
+void left_border(int fg, int bg)
 {
     screen_x--;
-    any_border();
+    any_border(fg, bg);
+}
+
+static void
+render_background(const char *title)
+{
+    memset(SCREEN_BUFFER, 0, sizeof(SCREEN_BUFFER));
+    screen_x = 0;
+    screen_y = 0;
+    screen_attr = (3 << 4) | 0;
+
+    for (int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; ++i) {
+        SCREEN_BUFFER[i][0] = 0xb2;
+        SCREEN_BUFFER[i][1] = (1 << 4) | 7;
+    }
+
+    for (int i=0; i<SCREEN_WIDTH; ++i) {
+        SCREEN_BUFFER[i][0] = ' ';
+        SCREEN_BUFFER[i][1] = (1 << 4) | 0;
+    }
+
+    if (*title) {
+        screen_y = 0;
+        screen_x = (SCREEN_WIDTH - strlen(title) - 2) / 2;
+
+        int save = screen_attr;
+        screen_attr = (0 << 4) | 0xf;
+        screen_putch(' ');
+        screen_print(title);
+        screen_putch(' ');
+        screen_attr = save;
+    }
+}
+
+static void
+choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
+        const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
+        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        const char *frame_label, int width, int color)
+{
+    int max_rows = 18;
+
+    screen_x = x;
+    screen_y = y; y += 1;
+
+    int bg = 3;
+    int fg = 0;
+    int bg_cursor = 1;
+    int fg_cursor = 0xf;
+    int bg_more = 2;
+    int fg_more = 8;
+
+    if (!color) {
+        bg = 7;
+        fg = 0;
+        bg_cursor = 0;
+        fg_cursor = 7;
+        bg_more = 7;
+        fg_more = 8;
+    }
+
+    screen_attr = (bg << 4) | fg;
+
+    int save = screen_attr;
+    screen_x--;
+    screen_putch(0xc9);
+    for (int j=0; j<width+1; ++j) {
+        screen_putch(0xcd);
+    }
+    screen_putch(0xbb);
+
+    if (*frame_label) {
+        screen_x = x + (width - strlen(frame_label) - 2) / 2;
+
+        int save2 = screen_attr;
+        screen_attr = (0 << 4) | 0xf;
+        screen_putch(' ');
+        screen_print(frame_label);
+        screen_putch(' ');
+        screen_attr = save2;
+    }
+
+    screen_attr = save;
+
+    if (get_text_func != NULL) {
+        int k = 0;
+        const char *line = get_text_func(k++, get_text_func_user_data);
+        while (line != NULL) {
+            int save_attr = screen_attr;
+            screen_x = x;
+            screen_y = y; y += 1;
+            left_border(fg, bg);
+            int left_padding = 1;
+            if (k == 1) {
+                left_padding = (width + 1 - strlen(line)) / 2;
+                screen_attr &= (0xf << 4);
+                screen_attr |= 0xb;
+            }
+            for (int pad=0; pad<left_padding; ++pad) {
+                screen_putch(' ');
+            }
+            screen_print(line);
+            screen_attr = save_attr;
+            for (int j=width-left_padding-strlen(line); j>=0; --j) {
+                screen_putch(' ');
+            }
+            right_border(fg, bg);
+
+            line = get_text_func(k++, get_text_func_user_data);
+        }
+
+        screen_x = x;
+        screen_y = y; y += 1;
+        left_border(fg, bg);
+        for (int j=width; j>=0; --j) {
+            screen_putch(' ');
+        }
+        right_border(fg, bg);
+    }
+
+    screen_x = x;
+    screen_y = y;
+
+    if (state->cursor <= state->offset) {
+        state->offset = state->cursor;
+        if (state->cursor > 0) {
+            state->offset--;
+        }
+    } else if (state->cursor >= state->offset + max_rows - 1) {
+        state->offset = state->cursor - max_rows + 1;
+        if (state->offset < n - max_rows) {
+            state->offset++;
+        }
+    }
+
+    int begin = state->offset;
+    int end = state->offset + max_rows;
+    if (end > n) {
+        end = n;
+    }
+
+    int pre_y = screen_y;
+
+    for (int i=begin; i<end; ++i) {
+        int save = screen_attr;
+        if (i == state->cursor) {
+            screen_attr = (bg_cursor << 4) | fg_cursor;
+        }
+
+        screen_x = x;
+        screen_y = y; y += 1;
+
+        left_border(fg, bg);
+        screen_print(" ");
+        const char *line = get_label_func(i, get_label_func_user_data);
+        if (!line) {
+            line = "";
+        }
+        screen_print(line);
+        for (int j=width-1-strlen(line); j>=0; --j) {
+            screen_putch(' ');
+        }
+        if (i == state->cursor) {
+            screen_attr = save;
+        }
+        right_border(fg, bg);
+    }
+
+    int post_y = screen_y;
+
+    if (begin > 0) {
+        int save_y = screen_y;
+        const char *pre = "( more --^ )";
+        screen_x = x + width - strlen(pre);
+        screen_y = pre_y;
+        int save = screen_attr;
+        screen_attr = (bg_more << 4) | fg_more;
+        screen_print(pre);
+        screen_attr = save;
+        screen_x = x;
+        screen_y = save_y;
+    }
+
+    if (end < n) {
+        const char *post = "( more --v )";
+        screen_x = x + width - strlen(post);
+        int save = screen_attr;
+        screen_attr = (bg_more << 4) | fg_more;
+        screen_print(post);
+        screen_x = x;
+    }
+
+    screen_x = x;
+    screen_y = y; y += 1;
+
+    save = screen_attr;
+    screen_attr = (bg << 4) | fg;
+    screen_x--;
+    screen_putch(0xc8);
+    for (int j=0; j<width+1; ++j) {
+        screen_putch(0xcd);
+    }
+    screen_putch(0xbc);
+    right_shadow(2);
+
+    screen_x = x + 1;
+    screen_y = y; y += 1;
+    right_shadow(width + 3);
+}
+
+static void
+present()
+{
+    short __far *screen = (short __far *)(0xb8000000L);
+    _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
 }
 
 static int
-choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
+choice_dialog_measure(int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
         const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
         const char *frame_label)
 {
-    int max_rows = 18;
-    int page_size = 5;
     int width = 20;
     int x_padding = 3;
 
@@ -152,226 +364,85 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         }
     }
 
-    while (1) {
-        memset(SCREEN_BUFFER, 0, sizeof(SCREEN_BUFFER));
-        screen_x = 0;
-        screen_y = 0;
-        screen_attr = (3 << 4) | 0;
+    return width;
+}
 
-        for (int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; ++i) {
-            SCREEN_BUFFER[i][0] = 0xb2;
-            SCREEN_BUFFER[i][1] = (1 << 4) | 7;
-        }
+static int
+choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
+{
+    int page_size = 5;
 
-        for (int i=0; i<SCREEN_WIDTH; ++i) {
-            SCREEN_BUFFER[i][0] = ' ';
-            SCREEN_BUFFER[i][1] = (1 << 4) | 0;
-        }
+    int ch = getch();
+    if (ch == 0) {
+        ch = 0x100 | getch();
+    }
 
-        if (*title) {
-            screen_y = 0;
-            screen_x = (SCREEN_WIDTH - strlen(title) - 2) / 2;
-
-            int save = screen_attr;
-            screen_attr = (0 << 4) | 0xf;
-            screen_putch(' ');
-            screen_print(title);
-            screen_putch(' ');
-            screen_attr = save;
-        }
-
-        int x = 4;
-        // To center the window on the screen:
-        //x = (SCREEN_WIDTH - width) / 2;
-        int y = 2;
-
-        screen_x = x;
-        screen_y = y; y += 1;
-
-        int save = screen_attr;
-        screen_attr = (3 << 4) | 0xf;
-        screen_x--;
-        screen_putch(0xc9);
-        for (int j=0; j<width+1; ++j) {
-            screen_putch(0xcd);
-        }
-        screen_putch(0xbb);
-
-        if (*frame_label) {
-            screen_x = x + (width - strlen(frame_label) - 2) / 2;
-
-            int save2 = screen_attr;
-            screen_attr = (0 << 4) | 0xf;
-            screen_putch(' ');
-            screen_print(frame_label);
-            screen_putch(' ');
-            screen_attr = save2;
-        }
-
-        screen_attr = save;
-
-        if (get_text_func != NULL) {
-            int k = 0;
-            const char *line = get_text_func(k++, get_text_func_user_data);
-            while (line != NULL) {
-                int save_attr = screen_attr;
-                screen_x = x;
-                screen_y = y; y += 1;
-                left_border();
-                int left_padding = 1;
-                if (k == 1) {
-                    left_padding = (width + 1 - strlen(line)) / 2;
-                    screen_attr &= (0xf << 4);
-                    screen_attr |= 0xb;
-                }
-                for (int pad=0; pad<left_padding; ++pad) {
-                    screen_putch(' ');
-                }
-                screen_print(line);
-                screen_attr = save_attr;
-                for (int j=width-left_padding-strlen(line); j>=0; --j) {
-                    screen_putch(' ');
-                }
-                right_border();
-
-                line = get_text_func(k++, get_text_func_user_data);
-            }
-
-            screen_x = x;
-            screen_y = y; y += 1;
-            left_border();
-            for (int j=width; j>=0; --j) {
-                screen_putch(' ');
-            }
-            right_border();
-        }
-
-        screen_x = x;
-        screen_y = y;
-
-        if (state->cursor <= state->offset) {
-            state->offset = state->cursor;
-            if (state->cursor > 0) {
-                state->offset--;
-            }
-        } else if (state->cursor >= state->offset + max_rows - 1) {
-            state->offset = state->cursor - max_rows + 1;
-            if (state->offset < n - max_rows) {
-                state->offset++;
-            }
-        }
-
-        int begin = state->offset;
-        int end = state->offset + max_rows;
-        if (end > n) {
-            end = n;
-        }
-
-        int pre_y = screen_y;
-
-        for (int i=begin; i<end; ++i) {
-            int save = screen_attr;
-            if (i == state->cursor) {
-                screen_attr = (1 << 4) | 0xf;
-            }
-
-            screen_x = x;
-            screen_y = y; y += 1;
-
-            left_border();
-            screen_print(" ");
-            const char *line = get_label_func(i, get_label_func_user_data);
-            if (!line) {
-                line = "";
-            }
-            screen_print(line);
-            for (int j=width-1-strlen(line); j>=0; --j) {
-                screen_putch(' ');
-            }
-            if (i == state->cursor) {
-                screen_attr = save;
-            }
-            right_border();
-        }
-
-        int post_y = screen_y;
-
-        if (begin > 0) {
-            int save_y = screen_y;
-            const char *pre = "( more --^ )";
-            screen_x = x + width - strlen(pre);
-            screen_y = pre_y;
-            int save = screen_attr;
-            screen_attr = (2 << 4) | 8;
-            screen_print(pre);
-            screen_attr = save;
-            screen_x = x;
-            screen_y = save_y;
-        }
-
-        if (end < n) {
-            const char *post = "( more --v )";
-            screen_x = x + width - strlen(post);
-            int save = screen_attr;
-            screen_attr = (2 << 4) | 8;
-            screen_print(post);
-            screen_x = x;
-        }
-
-        screen_x = x;
-        screen_y = y; y += 1;
-
-        save = screen_attr;
-        screen_attr = (3 << 4) | 0xf;
-        screen_x--;
-        screen_putch(0xc8);
-        for (int j=0; j<width+1; ++j) {
-            screen_putch(0xcd);
-        }
-        screen_putch(0xbc);
-        right_shadow(2);
-
-        screen_x = x + 1;
-        screen_y = y; y += 1;
-        right_shadow(width + 3);
-
-        short __far *screen = (short __far *)(0xb8000000L);
-        _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
-
-        int ch = getch();
-        if (ch == 0) {
-            ch = 0x100 | getch();
-        }
-
-        if (ch == KEY_NPAGE) {
-            if (state->cursor >= n - page_size) {
-                state->cursor = n - 1;
-            } else {
-                state->cursor += page_size;
-            }
-        } else if (ch == KEY_PPAGE) {
-            if (state->cursor < page_size) {
-                state->cursor = 0;
-            } else {
-                state->cursor -= page_size;
-            }
-        } else if (ch == KEY_HOME) {
-            state->cursor = 0;
-        } else if (ch == KEY_END) {
+    if (ch == KEY_NPAGE) {
+        if (state->cursor >= n - page_size) {
             state->cursor = n - 1;
-        } else if (ch == KEY_DOWN) {
-            if (state->cursor < n - 1) {
-                state->cursor += 1;
-            }
-        } else if (ch == KEY_UP) {
-            if (state->cursor > 0) {
-                state->cursor -= 1;
-            }
-        } else if (ch == ENTERKEY) {
-            return state->cursor;
-        } else if (ch == 27) {
+        } else {
+            state->cursor += page_size;
+        }
+    } else if (ch == KEY_PPAGE) {
+        if (state->cursor < page_size) {
             state->cursor = 0;
-            return state->cursor;
+        } else {
+            state->cursor -= page_size;
+        }
+    } else if (ch == KEY_HOME) {
+        state->cursor = 0;
+    } else if (ch == KEY_END) {
+        state->cursor = n - 1;
+    } else if (ch == KEY_DOWN) {
+        if (state->cursor < n - 1) {
+            state->cursor += 1;
+        }
+    } else if (ch == KEY_UP) {
+        if (state->cursor > 0) {
+            state->cursor -= 1;
+        }
+    } else if (ch == ENTERKEY) {
+        return 1;
+    } else if (ch == 27) {
+        state->cursor = 0;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int
+choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, int n,
+        const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
+        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        void (*render_background_func)(void *), void *render_background_func_user_data,
+        const char *frame_label)
+{
+    int width = choice_dialog_measure(n,
+            get_text_func, get_text_func_user_data,
+            get_label_func, get_label_func_user_data,
+            frame_label);
+
+    if (x == -1) {
+        x = (SCREEN_WIDTH - width) / 2;
+    }
+
+    while (1) {
+        render_background(title);
+
+        if (render_background_func) {
+            render_background_func(render_background_func_user_data);
+        }
+
+        choice_dialog_render(x, y, state, n,
+                get_text_func, get_text_func_user_data,
+                get_label_func, get_label_func_user_data,
+                frame_label, width, 1);
+
+        present();
+
+        if (choice_dialog_handle_input(state, n)) {
+            break;
         }
     }
 
@@ -510,6 +581,41 @@ get_label_game(int i, void *user_data)
     return NULL;
 }
 
+struct BackgroundRenderUserData {
+    struct GameCatalog *cat;
+    struct GameCatalogGroup *here;
+    int width;
+};
+
+static void
+render_group_background(void *user_data)
+{
+    struct BackgroundRenderUserData *ud = user_data;
+
+    struct GetLabelGroupUserData glgud;
+    glgud.cat = ud->cat;
+    glgud.group = ud->here;
+    int max = (ud->here->num_children ? ud->here->num_children : ud->here->num_subgroups);
+
+    struct ChoiceDialogState cds;
+    cds.cursor = ud->here->cursor_index;
+    cds.offset = ud->here->scroll_offset;
+
+    const char *frame_label = ud->cat->strings->d[ud->here->title_idx];
+
+    if (ud->width == 0) {
+        ud->width = choice_dialog_measure(max + 1,
+                NULL, NULL,
+                get_label_group, &glgud,
+                frame_label);
+    }
+
+    choice_dialog_render(2, 2, &cds, max + 1,
+            NULL, NULL,
+            get_label_group, &glgud,
+            frame_label, ud->width, 0);
+}
+
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
 
@@ -597,15 +703,26 @@ int main(int argc, char *argv[])
         char buf[512];
         strcpy(buf, "");
 
-        if (game != -1) {
-            print_parents_first(buf, cat, here);
+        if (here->parent_group) {
+            print_parents_first(buf, cat, here->parent_group);
+        }
 
+        if (game != -1) {
             struct GetTextGameUserData gtgud;
             gtgud.cat = cat;
             gtgud.game = game;
 
+            struct BackgroundRenderUserData brud;
+            brud.cat = cat;
+            brud.here = here;
+            brud.width = 0;
+
             struct ChoiceDialogState cds = { 0, 0 };
-            int selection = choice_dialog(buf, &cds, 2, get_text_game, &gtgud, get_label_game, NULL, cat->names->d[game]);
+            int selection = choice_dialog(-1, 5, buf, &cds, 2,
+                    get_text_game, &gtgud,
+                    get_label_game, NULL,
+                    render_group_background, &brud,
+                    cat->names->d[game]);
 
             if (selection == 0) {
                 ipc_buffer_pop_menu_trail_entry();
@@ -631,10 +748,6 @@ int main(int argc, char *argv[])
                 }
             }
         } else {
-            if (here->parent_group) {
-                print_parents_first(buf, cat, here->parent_group);
-            }
-
             struct GetLabelGroupUserData glgud;
             glgud.cat = cat;
             glgud.group = here;
@@ -642,7 +755,11 @@ int main(int argc, char *argv[])
             struct ChoiceDialogState cds;
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
-            int selection = choice_dialog(buf, &cds, max + 1, NULL, NULL, get_label_group, &glgud, cat->strings->d[here->title_idx]);
+            int selection = choice_dialog(2, 2, buf, &cds, max + 1,
+                    NULL, NULL,
+                    get_label_group, &glgud,
+                    NULL, NULL,
+                    cat->strings->d[here->title_idx]);
             here->cursor_index = cds.cursor;
             here->scroll_offset = cds.offset;
 
