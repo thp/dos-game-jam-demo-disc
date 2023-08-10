@@ -124,6 +124,9 @@ render_background(const char *title)
     for (int i=0; i<SCREEN_WIDTH; ++i) {
         SCREEN_BUFFER[i][0] = ' ';
         SCREEN_BUFFER[i][1] = (1 << 4) | 0;
+
+        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][0] = ' ';
+        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][1] = (0 << 4) | 0;
     }
 
     if (*title) {
@@ -137,6 +140,33 @@ render_background(const char *title)
         screen_putch(' ');
         screen_attr = save;
     }
+
+    screen_y = SCREEN_HEIGHT - 1;
+    screen_x = 2;
+    int save = screen_attr;
+
+    static const struct {
+        const char *key;
+        const char *func;
+    } KEYS[] = {
+        { "ESC", "Back" },
+        { "Enter", "Activate" },
+        { "Up/Dn", "Move" },
+        { "PgUp/PgDn", "Jump" },
+        { "Home/End", "First/Last" },
+    };
+
+    for (int i=0; i<sizeof(KEYS)/sizeof(KEYS[0]); ++i) {
+        screen_attr = (0 << 4) | 3;
+        screen_print(KEYS[i].key);
+        screen_attr = (0 << 4) | 0xf;
+        screen_print(" ");
+        screen_print(KEYS[i].func);
+
+        screen_print("  ");
+    }
+
+    screen_attr = save;
 }
 
 static void
