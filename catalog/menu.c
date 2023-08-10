@@ -232,15 +232,17 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
 
     int scrolloff = 3;
 
-    if (state->cursor < state->offset + scrolloff) {
-        state->offset = state->cursor - scrolloff;
-        if (state->offset < 0) {
-            state->offset = 0;
-        }
-    } else if (state->cursor > state->offset + max_rows - 1 - scrolloff) {
-        state->offset = state->cursor - max_rows + scrolloff + 1;
-        if (state->offset > n - max_rows) {
-            state->offset = n - max_rows;
+    if (n > max_rows) {
+        if (state->cursor < state->offset + scrolloff) {
+            state->offset = state->cursor - scrolloff;
+            if (state->offset < 0) {
+                state->offset = 0;
+            }
+        } else if (state->cursor > state->offset + max_rows - 1 - scrolloff) {
+            state->offset = state->cursor - max_rows + scrolloff + 1;
+            if (state->offset > n - max_rows) {
+                state->offset = n - max_rows;
+            }
         }
     }
 
