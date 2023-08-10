@@ -2,13 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__DJGPP__)
-#include <sys/farptr.h>
-#include <sys/nearptr.h>
-#include <dpmi.h>
-#include <go32.h>
-#endif
-
 #include <dos.h>
 
 #include <conio.h>
@@ -21,6 +14,8 @@
 #define ENTERKEY (13)
 
 #include "gamectlg.h"
+#include "ipc.h"
+#include "vgautil.h"
 
 #define SCREEN_WIDTH (80)
 #define SCREEN_HEIGHT (25)
@@ -340,13 +335,8 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         screen_y = y; y += 1;
         right_shadow(width + 3);
 
-#if defined(__DJGPP__)
-        short *screen = (short *)(__djgpp_conventional_base + 0xb8000);
-        memcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
-#else
         short __far *screen = (short __far *)(0xb8000000L);
         _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
-#endif
 
         int ch = getch();
         if (ch == 0) {
@@ -520,63 +510,51 @@ get_label_game(int i, void *user_data)
     return NULL;
 }
 
-static struct {
-    int their_ds;
-    int their_offset;
-} dos_ipc = { 0, 0 };
+static struct IPCBuffer __far *
+ipc_buffer = NULL;
 
 static void
-dos_ipc_append(const char *string)
+ipc_buffer_add_menu_trail_entry(int selection, struct GameCatalogGroup *here)
 {
-#if defined(__DJGPP__)
-    if (dos_ipc.their_ds != 0) {
-        while (*string) {
-            _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, *string);
-            ++dos_ipc.their_offset;
-            ++string;
-        }
-        _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, '\0');
+    if (ipc_buffer) {
+        struct MenuTrailEntry __far *entry = &(ipc_buffer->menu_trail[ipc_buffer->menu_trail_len++]);
+        entry->selection = selection;
+        entry->cursor_index = here->cursor_index;
+        entry->scroll_offset = here->scroll_offset;
     }
-#else
-    if (dos_ipc.their_ds != 0) {
-        char __far *dest = (char __far *)(((uint32_t)dos_ipc.their_ds << 16) | (uint32_t)dos_ipc.their_offset);
-        while (*string) {
-            *dest++ = *string++;
-            ++dos_ipc.their_offset;
-        }
-        *dest = '\0';
-    }
-
-#endif
 }
 
-#if !defined(__DJGPP__)
-#define C80 (3)
-
-void
-textmode(unsigned char mode)
+static void
+ipc_buffer_pop_menu_trail_entry(void)
 {
-    union REGS inregs, outregs;
-    inregs.h.ah = 0;
-    inregs.h.al = mode;
-
-    int86(0x10, &inregs, &outregs);
+    if (ipc_buffer) {
+        ipc_buffer->menu_trail_len--;
+    }
 }
-#endif
 
 int main(int argc, char *argv[])
 {
+    // Empty keyboard buffer
+    while (kbhit()) {
+        getch();
+    }
+
+    disable_blinking_cursor();
+
     if (argc == 2) {
+        static struct {
+            int their_ds;
+            int their_offset;
+        } dos_ipc = { 0, 0 };
+
         if (sscanf(argv[1], "%x:%x", &dos_ipc.their_ds, &dos_ipc.their_offset) != 2) {
             dos_ipc.their_ds = 0;
             dos_ipc.their_offset = 0;
         }
-    }
 
-#if defined(__DJGPP__)
-    __djgpp_nearptr_enable();
-    _setcursortype(_NOCURSOR);
-#endif
+        ipc_buffer = (struct IPCBuffer __far *)(((uint32_t)dos_ipc.their_ds << 16) |
+                                                ((uint32_t)dos_ipc.their_offset));
+    }
 
     FILE *fp = fopen("gamectlg.dat", "rb");
     fseek(fp, 0, SEEK_END);
@@ -594,6 +572,27 @@ int main(int argc, char *argv[])
 
     struct GameCatalogGroup *here = cat->grouping;
     int game = -1;
+
+    /* Restore menu state if restarted */
+    if (ipc_buffer) {
+        for (int i=0; i<ipc_buffer->menu_trail_len; ++i) {
+            struct MenuTrailEntry entry = ipc_buffer->menu_trail[i];
+
+            here->cursor_index = entry.cursor_index;
+            here->scroll_offset = entry.scroll_offset;
+
+            if (here->num_subgroups) {
+                if (entry.selection < here->num_subgroups) {
+                    here = here->subgroups[entry.selection];
+                }
+            } else {
+                if (entry.selection < here->num_children) {
+                    game = here->children[entry.selection];
+                }
+            }
+        }
+    }
+
     while (1) {
         char buf[512];
         strcpy(buf, "");
@@ -609,19 +608,27 @@ int main(int argc, char *argv[])
             int selection = choice_dialog(buf, &cds, 2, get_text_game, &gtgud, get_label_game, NULL, cat->names->d[game]);
 
             if (selection == 0) {
+                ipc_buffer_pop_menu_trail_entry();
                 game = -1;
-            } else if (selection == 1) {
-                if ((cat->games[game].flags & FLAG_HAS_END_SCREEN) != 0) {
-                    dos_ipc_append("@");
-                } else {
-                    dos_ipc_append(" ");
+            } else {
+                selection -= 1;
+
+                ipc_buffer_add_menu_trail_entry(selection, here);
+
+                if (selection == 0) {
+                    // pop menu selection again
+                    ipc_buffer_pop_menu_trail_entry();
+
+                    if (ipc_buffer) {
+                        ipc_buffer->request = IPC_RUN_GAME;
+                        ipc_buffer->game_flags = cat->games[game].flags;
+
+                        _fstrcpy(ipc_buffer->cmdline, "demo2023/");
+                        _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
+
+                        return 0;
+                    }
                 }
-                dos_ipc_append("DEMO2023/");
-                dos_ipc_append(cat->strings->d[cat->games[game].run_idx]);
-
-                textmode(C80);
-
-                return 0;
             }
         } else {
             if (here->parent_group) {
@@ -641,12 +648,16 @@ int main(int argc, char *argv[])
 
             if (selection == 0) {
                 if (here->parent_group != NULL) {
+                    ipc_buffer_pop_menu_trail_entry();
                     here = here->parent_group;
                 } else {
                     break;
                 }
             } else {
                 selection -= 1;
+
+                ipc_buffer_add_menu_trail_entry(selection, here);
+
                 if (here->num_subgroups) {
                     if (selection >= 0 && selection < here->num_subgroups) {
                         here = here->subgroups[selection];
@@ -662,8 +673,11 @@ int main(int argc, char *argv[])
 
     game_catalog_free(cat);
 
-    textmode(C80);
-    dos_ipc_append("exit");
+    if (ipc_buffer) {
+        ipc_buffer->request = IPC_EXIT;
+    }
+
+    textmode_reset();
 
     return 0;
 }
