@@ -154,7 +154,7 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     int fg = 0;
     int bg_cursor = 1;
     int fg_cursor = 0xf;
-    int bg_more = 2;
+    int bg_more = 3;
     int fg_more = 8;
 
     if (!color) {
@@ -277,24 +277,15 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
 
     if (begin > 0) {
         int save_y = screen_y;
-        const char *pre = "( more --^ )";
+        const char *pre = "(^^)";
         screen_x = x + width - strlen(pre);
-        screen_y = pre_y;
+        screen_y = pre_y - 1;
         int save = screen_attr;
         screen_attr = (bg_more << 4) | fg_more;
         screen_print(pre);
         screen_attr = save;
         screen_x = x;
         screen_y = save_y;
-    }
-
-    if (end < n) {
-        const char *post = "( more --v )";
-        screen_x = x + width - strlen(post);
-        int save = screen_attr;
-        screen_attr = (bg_more << 4) | fg_more;
-        screen_print(post);
-        screen_x = x;
     }
 
     screen_x = x;
@@ -309,6 +300,15 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     }
     screen_putch(0xbc);
     right_shadow(2);
+
+    if (end < n) {
+        const char *post = "(vv)";
+        screen_x = x + width - strlen(post);
+        int save = screen_attr;
+        screen_attr = (bg_more << 4) | fg_more;
+        screen_print(post);
+        screen_x = x;
+    }
 
     screen_x = x + 1;
     screen_y = y; y += 1;
