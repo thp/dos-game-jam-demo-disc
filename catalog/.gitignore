@@ -1,4 +1,6 @@
 *.o
 pcatalog
 gamectlg.dat
-dosmenu.exe
+djmenu.exe
+menu.exe
+start.exe

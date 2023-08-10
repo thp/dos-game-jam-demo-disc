@@ -2,11 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__DJGPP__)
 #include <sys/farptr.h>
 #include <sys/nearptr.h>
-#include <dos.h>
 #include <dpmi.h>
 #include <go32.h>
+#endif
+
+#include <dos.h>
 
 #include <conio.h>
 #define KEY_DOWN (0x100 | 80)
@@ -144,7 +147,10 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
     }
 
     for (int i=0; i<n; ++i) {
-        const char *line = get_label_func(i, get_label_func_user_data) ?: "";
+        const char *line = get_label_func(i, get_label_func_user_data);
+        if (!line) {
+            continue;
+        }
         int len = strlen(line) + x_padding;
         if (width < len) {
             width = len;
@@ -279,7 +285,10 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
 
             left_border();
             screen_print(" ");
-            const char *line = get_label_func(i, get_label_func_user_data) ?: "";
+            const char *line = get_label_func(i, get_label_func_user_data);
+            if (!line) {
+                line = "";
+            }
             screen_print(line);
             for (int j=width-1-strlen(line); j>=0; --j) {
                 screen_putch(' ');
@@ -331,8 +340,13 @@ choice_dialog(const char *title, struct ChoiceDialogState *state, int n,
         screen_y = y; y += 1;
         right_shadow(width + 3);
 
+#if defined(__DJGPP__)
         short *screen = (short *)(__djgpp_conventional_base + 0xb8000);
         memcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
+#else
+        short __far *screen = (short __far *)(0xb8000000L);
+        _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
+#endif
 
         int ch = getch();
         if (ch == 0) {
@@ -514,6 +528,7 @@ static struct {
 static void
 dos_ipc_append(const char *string)
 {
+#if defined(__DJGPP__)
     if (dos_ipc.their_ds != 0) {
         while (*string) {
             _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, *string);
@@ -522,7 +537,32 @@ dos_ipc_append(const char *string)
         }
         _farpokeb(_dos_ds, dos_ipc.their_ds * 16 + dos_ipc.their_offset, '\0');
     }
+#else
+    if (dos_ipc.their_ds != 0) {
+        char __far *dest = (char __far *)(((uint32_t)dos_ipc.their_ds << 16) | (uint32_t)dos_ipc.their_offset);
+        while (*string) {
+            *dest++ = *string++;
+            ++dos_ipc.their_offset;
+        }
+        *dest = '\0';
+    }
+
+#endif
 }
+
+#if !defined(__DJGPP__)
+#define C80 (3)
+
+void
+textmode(unsigned char mode)
+{
+    union REGS inregs, outregs;
+    inregs.h.ah = 0;
+    inregs.h.al = mode;
+
+    int86(0x10, &inregs, &outregs);
+}
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -533,8 +573,10 @@ int main(int argc, char *argv[])
         }
     }
 
+#if defined(__DJGPP__)
     __djgpp_nearptr_enable();
     _setcursortype(_NOCURSOR);
+#endif
 
     FILE *fp = fopen("gamectlg.dat", "rb");
     fseek(fp, 0, SEEK_END);
@@ -559,7 +601,9 @@ int main(int argc, char *argv[])
         if (game != -1) {
             print_parents_first(buf, cat, here);
 
-            struct GetTextGameUserData gtgud = { cat, game };
+            struct GetTextGameUserData gtgud;
+            gtgud.cat = cat;
+            gtgud.game = game;
 
             struct ChoiceDialogState cds = { 0, 0 };
             int selection = choice_dialog(buf, &cds, 2, get_text_game, &gtgud, get_label_game, NULL, cat->names->d[game]);
@@ -584,9 +628,13 @@ int main(int argc, char *argv[])
                 print_parents_first(buf, cat, here->parent_group);
             }
 
-            struct GetLabelGroupUserData glgud = { cat, here };
+            struct GetLabelGroupUserData glgud;
+            glgud.cat = cat;
+            glgud.group = here;
             int max = (here->num_children ? here->num_children : here->num_subgroups);
-            struct ChoiceDialogState cds = { here->cursor_index, here->scroll_offset };
+            struct ChoiceDialogState cds;
+            cds.cursor = here->cursor_index;
+            cds.offset = here->scroll_offset;
             int selection = choice_dialog(buf, &cds, max + 1, NULL, NULL, get_label_group, &glgud, cat->strings->d[here->title_idx]);
             here->cursor_index = cds.cursor;
             here->scroll_offset = cds.offset;

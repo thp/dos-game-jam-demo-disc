@@ -32,10 +32,10 @@ run_command(char *cmd, char *args)
     segread(&segs);
 
     char fcb1[37];
-    memset(&fcb1, 0, sizeof(fcb1));
+    memset(fcb1, 0, sizeof(fcb1));
 
     char fcb2[37];
-    memset(&fcb2, 0, sizeof(fcb2));
+    memset(fcb2, 0, sizeof(fcb2));
 
     struct LoadExec {
         short wEnvSeg;
@@ -46,8 +46,8 @@ run_command(char *cmd, char *args)
 
     le.wEnvSeg = 0;
     le.pfCmdTail = MK_FP(segs.ds, (unsigned)cmdTail);
-    le.pfrFCB_1 = MK_FP(segs.ds, &fcb1);
-    le.pfrFCB_2 = MK_FP(segs.ds, &fcb2);
+    le.pfrFCB_1 = MK_FP(segs.ds, fcb1);
+    le.pfrFCB_2 = MK_FP(segs.ds, fcb2);
 
     // execute subprocess
     union REGS regs;
@@ -134,7 +134,10 @@ int rungame(char *buffer)
 
 int runmenu()
 {
-    int my_ds = _DS;
+    struct SREGS segs;
+    segread(&segs);
+
+    int my_ds = segs.ds;
     int my_offset = (unsigned)ipc_buffer;
 
     const char HEXDIGITS[] = "0123456789ABCDEF";
@@ -168,7 +171,6 @@ int main()
             break;
         }
 
-        clrscr();
         rungame(ipc_buffer);
     }
 
