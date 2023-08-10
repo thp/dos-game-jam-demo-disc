@@ -156,6 +156,7 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     int fg_cursor = 0xf;
     int bg_more = 3;
     int fg_more = 8;
+    int fg_scroll = 0xf;
 
     if (!color) {
         bg = 7;
@@ -164,6 +165,7 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         fg_cursor = 7;
         bg_more = 7;
         fg_more = 8;
+        fg_scroll = 0;
     }
 
     screen_attr = (bg << 4) | fg;
@@ -264,7 +266,24 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
             line = "";
         }
         screen_print(line);
-        for (int j=width-1-strlen(line); j>=0; --j) {
+        for (int j=width-1-strlen(line)-1; j>=0; --j) {
+            screen_putch(' ');
+        }
+        if (state->offset > 0 || end < n) {
+            int save2 = screen_attr;
+
+            int scrollbar_height = (end - begin) * max_rows / n;
+            int scrollbar_offset = (max_rows - scrollbar_height) * state->offset / (n - max_rows);
+
+            if ((i - begin) >= scrollbar_offset && (i - begin) < scrollbar_offset + scrollbar_height) {
+                screen_attr = (bg << 4) | fg_scroll;
+                screen_putch(0xdb);
+            } else {
+                screen_attr = (bg << 4) | fg_scroll;
+                screen_putch(0xb1);
+            }
+            screen_attr = save2;
+        } else {
             screen_putch(' ');
         }
         if (i == state->cursor) {
@@ -364,7 +383,7 @@ choice_dialog_measure(int n,
         }
     }
 
-    return width;
+    return width + 1;
 }
 
 static int
