@@ -1,7 +1,7 @@
 !ifdef __UNIX__
 dosobj = src/dos/main.obj src/dos/keyb.obj src/dos/mouse.obj src/dos/timer.obj &
 	src/dos/cdpmi.obj src/dos/vidsys.obj src/dos/drv_vga.obj src/dos/drv_vbe.obj &
-	src/dos/drv_s3.obj
+	src/dos/drv_s3.obj src/dos/swcursor.obj
 appobj = src/app.obj src/logger.obj src/menuscr.obj
 rtkobj = src/rtk.obj src/rtk_draw.obj
 
@@ -11,7 +11,7 @@ libimago = libs/dos/imago.lib
 !else
 dosobj = src\dos\main.obj src\dos\keyb.obj src\dos\mouse.obj src\dos\timer.obj &
 	src\dos\cdpmi.obj src\dos\vidsys.obj src\dos\drv_vga.obj src\dos\drv_vbe.obj &
-	src\dos\drv_s3.obj
+	src\dos\drv_s3.obj src\dos\swcursor.obj
 appobj = src\app.obj src\logger.obj src\menuscr.obj
 rtkobj = src\rtk.obj src\rtk_draw.obj
 

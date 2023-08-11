@@ -36,10 +36,10 @@ static struct vid_modeinfo modes[] = {
 
 static struct vid_gfxops gfxops_mode12h = {
 	0, 0, setpal4, getpal4, vid_vsync, clear4, blitfb4, 0, fill4, 0, 0, 0, 0,
-	cursorpos, cursorshape, endfrm };
+	0, cursorpos, cursorshape, endfrm };
 static struct vid_gfxops gfxops_mode13h = {
 	0, 0, vga_setpal, vga_getpal, vid_vsync, clear8, blitfb8, 0, fill8, 0, 0, 0, 0,
-	cursorpos, cursorshape, endfrm };
+	0, cursorpos, cursorshape, endfrm };
 
 void vid_register_vga(void)
 {

@@ -278,6 +278,15 @@ void vid_blitfb32(uint32_t *src, int pitch)
 	}
 }
 
+int vid_read(int x, int y, int w, int h, void *img, int pitch)
+{
+	if(cur_mode->ops.read) {
+		cur_mode->ops.read(x, y, w, h, img, pitch);
+		return 0;
+	}
+	return -1;
+}
+
 void vid_cursorpos(int x, int y)
 {
 	cur_mode->ops.cursorpos(x, y);

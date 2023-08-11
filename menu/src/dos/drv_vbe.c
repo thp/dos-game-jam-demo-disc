@@ -5,6 +5,7 @@
 #include "drv.h"
 #include "vbe.h"
 #include "vga.h"
+#include "swcursor.h"
 #include "cdpmi.h"
 #include "logger.h"
 
@@ -30,6 +31,9 @@ static void blit_banked(int x, int y, int w, int h, void *fb, int pitch);
 static void blitfb_lfb(void *fb, int pitch);
 static void blitfb_banked(void *fb, int pitch);
 static void flip(int vsync);
+
+static void readrect_lfb(int x, int y, int w, int h, void *img, int pitch);
+static void readrect_banked(int x, int y, int w, int h, void *img, int pitch);
 
 static void cursorpos(int x, int y);
 static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *mask);
@@ -179,10 +183,15 @@ retry:
 	if(mode & VBE_MODE_LFB) {
 		minf->ops.blit = blit_lfb;
 		minf->ops.blitfb = blitfb_lfb;
+		minf->ops.read = readrect_lfb;
 	} else {
 		minf->ops.blit = blit_banked;
 		minf->ops.blitfb = blitfb_banked;
+		minf->ops.read = readrect_banked;
 	}
+
+	cur_x = cur_y = -1;
+	reset_swcursor();
 
 	print_mode_info(mode, minf);
 	return 0;
@@ -454,6 +463,31 @@ static void flip(int vsync)
 	/* TODO */
 }
 
+static void readrect_lfb(int x, int y, int w, int h, void *img, int pitch)
+{
+	int i, pixsz, spansz;
+	unsigned char *dest, *src;
+
+	dbgmsg("read: %d,%d (%dx%d)\n", x, y, w, h);
+
+	pixsz = (cur_mi->bpp + 7) >> 3;
+	spansz = w * pixsz;
+
+	src = (char*)vid_vmem + cur_mi->pitch * y + x * pixsz;
+	dest = img;
+
+	for(i=0; i<h; i++) {
+		memcpy(dest, src, spansz);
+		src += cur_mi->pitch;
+		dest += pitch;
+	}
+}
+
+static void readrect_banked(int x, int y, int w, int h, void *img, int pitch)
+{
+	abort();
+}
+
 static void cursorpos(int x, int y)
 {
 	prev_x = cur_x;
@@ -466,24 +500,8 @@ static void cursorshape(int xsz, int ysz, int hotx, int hoty, void *img, void *m
 {
 }
 
-static void draw_cursor(int x, int y)
-{
-	unsigned char *fb8;
-
-	switch(cur_mi->bpp) {
-	case 8:
-		fb8 = (unsigned char*)vid_vmem + y * cur_mi->pitch + x;
-		*fb8 ^= 0xff;
-		break;
-	}
-}
-
 static void endfrm(void)
 {
 	if(cur_x < 0) return;
-
-	if(prev_x >= 0) {
-		draw_cursor(prev_x, prev_y);
-	}
-	draw_cursor(cur_x, cur_y);
+	draw_swcursor(cur_x, cur_y);
 }
