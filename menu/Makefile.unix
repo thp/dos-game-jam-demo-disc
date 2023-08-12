@@ -1,0 +1,26 @@
+src = $(wildcard src/*.c) $(wildcard src/modern/*.c)
+obj = $(src:.c=.o)
+dep = $(src:.c=.d)
+bin = menu
+
+#opt = -O3
+dbg = -g
+warn = -pedantic -Wall
+inc = -Isrc -Isrc/modern
+
+CFLAGS = $(warn) $(dbg) $(opt) $(inc) $(def) -MMD
+LDFLAGS = -lGL -lX11 -lm
+
+$(bin): $(obj)
+	$(CC) -o $@ $(obj) $(LDFLAGS)
+
+-include $(dep)
+
+
+.PHONY: clean
+clean:
+	rm -f $(obj) $(bin)
+
+.PHONY: cleandep
+cleandep:
+	rm -f $(dep)

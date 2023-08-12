@@ -18,7 +18,6 @@ enum {
 
 static void widget_rect(rtk_widget *w, rtk_rect *rect);
 static void abs_widget_rect(rtk_widget *w, rtk_rect *rect);
-static void uicolor(uint32_t col, uint32_t lcol, uint32_t scol);
 static void draw_frame(rtk_rect *rect, int type, int sz, uint32_t bgcol, uint32_t shad, uint32_t lit);
 
 static void draw_window(rtk_widget *w);

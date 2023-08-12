@@ -103,8 +103,6 @@ int main(int argc, char **argv)
 			my += mdy;
 			if(my < 0) my = 0;
 			if(my >= SCR_HEIGHT) my = SCR_HEIGHT - 1;
-			mdx = mx - prev_mx;
-			mdy = my - prev_my;
 
 			vid_cursorpos(mx, my);
 
