@@ -17,6 +17,9 @@ struct IPCBuffer {
     uint8_t request;
     uint8_t game_flags;
 
+    uint8_t color_palette[16][3];
+    uint8_t color_palette_len;
+
     char cmdline[128];
 
     struct MenuTrailEntry menu_trail[32];

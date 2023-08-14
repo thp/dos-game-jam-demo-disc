@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <dos.h>
+#include <time.h>
 
 #include <conio.h>
 #define KEY_DOWN (0x100 | 80)
@@ -11,11 +12,18 @@
 #define KEY_PPAGE (0x100 | 73)
 #define KEY_HOME (0x100 | 71)
 #define KEY_END (0x100 | 79)
+#define KEY_F2 (0x100 | 60)
 #define ENTERKEY (13)
 
 #include "gamectlg.h"
 #include "ipc.h"
 #include "vgautil.h"
+
+static struct IPCBuffer __far *
+ipc_buffer = NULL;
+
+static enum DisplayAdapter
+display_adapter_type;
 
 #define SCREEN_WIDTH (80)
 #define SCREEN_HEIGHT (25)
@@ -30,7 +38,63 @@ static uint8_t
 screen_y = 0;
 
 static uint8_t
+    COLOR_DEFAULT_FG = 0,
+
+    // default window text
+    COLOR_DEFAULT_BG = 3,
+
+    // bright variant of background
+    COLOR_BRIGHT_BG = 3 + 8,
+    COLOR_DARK_BG = 1,
+
+    // cursor/highlight
+    COLOR_CURSOR_BG = 1,
+    COLOR_CURSOR_FG = 3 + 8,
+
+    // text color of "more" indicator
+    COLOR_MORE_FG = 1,
+
+    // text color of game description
+    COLOR_GAME_DESCRIPTION_FG = 3 + 8,
+
+    // should be bright version of default bg
+    COLOR_SCROLL_FG = 3 + 8,
+
+    // frame label
+    COLOR_FRAME_LABEL_BG = 0,
+    COLOR_FRAME_LABEL_FG = 0xf,
+
+    // hotkey bar
+    COLOR_HOTKEY_BG = 0,
+    COLOR_HOTKEY_KEY = 3,
+    COLOR_HOTKEY_LABEL = 0xf,
+
+    // grayscale
+    COLOR_DISABLED_BG = 7,
+    COLOR_DISABLED_FG = 0,
+    COLOR_DISABLED_SOFT_CONTRAST = 8;
+
+
+static void
+update_color_bindings()
+{
+    COLOR_BRIGHT_BG = COLOR_DEFAULT_BG + 8;
+    COLOR_CURSOR_BG = COLOR_DARK_BG;
+    COLOR_CURSOR_FG = COLOR_BRIGHT_BG;
+    COLOR_MORE_FG = COLOR_DARK_BG;
+    COLOR_GAME_DESCRIPTION_FG = COLOR_BRIGHT_BG;
+    COLOR_SCROLL_FG = COLOR_BRIGHT_BG;
+    COLOR_HOTKEY_KEY = COLOR_DEFAULT_BG;
+}
+
+static uint8_t
 screen_attr = 7;
+
+static int32_t
+brightness = 0;
+
+static int
+brightness_up_down = 1;
 
 static void
 screen_putch(char ch)
@@ -114,7 +178,7 @@ render_background(const char *title)
     memset(SCREEN_BUFFER, 0, sizeof(SCREEN_BUFFER));
     screen_x = 0;
     screen_y = 0;
-    screen_attr = (3 << 4) | 0;
+    screen_attr = (COLOR_DEFAULT_BG << 4) | COLOR_DEFAULT_FG;
 
     for (int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; ++i) {
         SCREEN_BUFFER[i][0] = 0xb2;
@@ -123,10 +187,11 @@ render_background(const char *title)
 
     for (int i=0; i<SCREEN_WIDTH; ++i) {
         SCREEN_BUFFER[i][0] = ' ';
-        SCREEN_BUFFER[i][1] = (1 << 4) | 0;
+        SCREEN_BUFFER[i][1] = (COLOR_FRAME_LABEL_BG << 4) | COLOR_FRAME_LABEL_FG;
 
         SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][0] = ' ';
-        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][1] = (0 << 4) | 0;
+        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][1] =
+            (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_BG;
     }
 
     if (*title) {
@@ -134,7 +199,7 @@ render_background(const char *title)
         screen_x = (SCREEN_WIDTH - strlen(title) - 2) / 2;
 
         int save = screen_attr;
-        screen_attr = (0 << 4) | 0xf;
+        screen_attr = (COLOR_FRAME_LABEL_BG << 4) | COLOR_FRAME_LABEL_FG;
         screen_putch(' ');
         screen_print(title);
         screen_putch(' ');
@@ -150,16 +215,15 @@ render_background(const char *title)
         const char *func;
     } KEYS[] = {
         { "ESC", "Back" },
-        { "Enter", "Activate" },
-        { "Up/Dn", "Move" },
-        { "PgUp/PgDn", "Jump" },
-        { "Home/End", "First/Last" },
+        { "F2", "Color Theme" },
+        { "Enter", "Go" },
+        { "Arrows", "Move" },
     };
 
     for (int i=0; i<sizeof(KEYS)/sizeof(KEYS[0]); ++i) {
-        screen_attr = (0 << 4) | 3;
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
         screen_print(KEYS[i].key);
-        screen_attr = (0 << 4) | 0xf;
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
         screen_print(" ");
         screen_print(KEYS[i].func);
 
@@ -180,22 +244,27 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     screen_x = x;
     screen_y = y; y += 1;
 
-    int bg = 3;
-    int fg = 0;
-    int bg_cursor = 1;
-    int fg_cursor = 0xf;
-    int bg_more = 3;
-    int fg_more = 8;
-    int fg_scroll = 0xf;
+    int bg = COLOR_DEFAULT_BG;
+    int fg = COLOR_DEFAULT_FG;
+    int bg_cursor = COLOR_CURSOR_BG;
+    int fg_cursor = COLOR_CURSOR_FG;
+    int bg_more = bg;
+    int fg_more = COLOR_MORE_FG;
+    int fg_scroll = COLOR_SCROLL_FG;
+    int bg_frame_label = COLOR_FRAME_LABEL_BG;
+    int fg_frame_label = COLOR_FRAME_LABEL_FG;
 
     if (!color) {
-        bg = 7;
-        fg = 0;
-        bg_cursor = 0;
-        fg_cursor = 7;
-        bg_more = 7;
-        fg_more = 8;
-        fg_scroll = 0;
+        bg = COLOR_DISABLED_BG;
+        fg = COLOR_DISABLED_SOFT_CONTRAST;
+        // reverse video
+        bg_cursor = fg;
+        fg_cursor = bg;
+        bg_more = bg;
+        fg_more = COLOR_DISABLED_SOFT_CONTRAST;
+        fg_scroll = COLOR_DISABLED_SOFT_CONTRAST;
+        bg_frame_label = COLOR_DISABLED_SOFT_CONTRAST;
+        fg_frame_label = bg;
     }
 
     screen_attr = (bg << 4) | fg;
@@ -212,7 +281,7 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         screen_x = x + (width - strlen(frame_label) - 2) / 2;
 
         int save2 = screen_attr;
-        screen_attr = (0 << 4) | 0xf;
+        screen_attr = (bg_frame_label << 4) | fg_frame_label;
         screen_putch(' ');
         screen_print(frame_label);
         screen_putch(' ');
@@ -232,8 +301,10 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
             int left_padding = 1;
             if (k == 1) {
                 left_padding = (width + 1 - strlen(line)) / 2;
+                // keep background
                 screen_attr &= (0xf << 4);
-                screen_attr |= 0xb;
+                // override foreground
+                screen_attr |= COLOR_GAME_DESCRIPTION_FG;
             }
             for (int pad=0; pad<left_padding; ++pad) {
                 screen_putch(' ');
@@ -368,9 +439,90 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     right_shadow(width + 3);
 }
 
+static struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} DEFAULT_PALETTE[] = {
+    { 0x00, 0x00, 0x00 },
+    { 0x00, 0x00, 0xaa },
+    { 0x00, 0xaa, 0x00 },
+    { 0x00, 0xaa, 0xaa },
+    { 0xaa, 0x00, 0x00 },
+    { 0xaa, 0x00, 0xaa },
+    { 0xaa, 0x55, 0x00 },
+    { 0xaa, 0xaa, 0xaa },
+    { 0x55, 0x55, 0x55 },
+    { 0x55, 0x55, 0xff },
+    { 0x55, 0xff, 0x55 },
+    { 0x55, 0xff, 0xff },
+    { 0xff, 0x55, 0x55 },
+    { 0xff, 0x55, 0xff },
+    { 0xff, 0xff, 0x55 },
+    { 0xff, 0xff, 0xff },
+};
+
+static void (*set_palette_entry)(uint8_t, uint8_t, uint8_t, uint8_t) = NULL;
+
+static void
+update_palette()
+{
+    static clock_t last_time = 0;
+
+    clock_t time = 1000ull * clock() / CLOCKS_PER_SEC;
+
+    if (!last_time) {
+        last_time = time;
+    } else {
+        while (time > last_time) {
+            brightness += brightness_up_down * 16;
+            if (brightness > 255) {
+                brightness = 255;
+            } else if (brightness < 0) {
+                brightness = 0;
+            }
+
+            last_time += 20;
+        }
+    }
+
+    if (set_palette_entry) {
+        for (int j=0; j<16; ++j) {
+            uint8_t r = (uint16_t)DEFAULT_PALETTE[j].r * brightness / 255;
+            uint8_t g = (uint16_t)DEFAULT_PALETTE[j].g * brightness / 255;
+            uint8_t b = (uint16_t)DEFAULT_PALETTE[j].b * brightness / 255;
+            set_palette_entry(j, r, g, b);
+        }
+    }
+
+    if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
+        int columns = 10 * (255 - brightness) / 255;
+        for (int y=0; y<SCREEN_HEIGHT; ++y) {
+            int dy = (y % 6) - 3;
+            if (dy < 0) {
+                dy = -dy;
+            }
+            if (dy * 2 > columns) {
+                continue;
+            }
+            for (int x=0; x<SCREEN_WIDTH; ++x) {
+                int dx = (x % 10) - 5;
+                if (dx < 0) {
+                    dx = -dx;
+                }
+                if (dx < columns) {
+                    SCREEN_BUFFER[y*SCREEN_WIDTH+x][1] = 0;
+                }
+            }
+        }
+    }
+}
+
 static void
 present()
 {
+    update_palette();
+
     short __far *screen = (short __far *)(0xb8000000L);
     _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
 }
@@ -420,10 +572,69 @@ choice_dialog_measure(int n,
     return width + 1;
 }
 
+
+static void
+generate_random_palette()
+{
+    // first, generate background/disabled colors
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + rand() % 200;
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + rand() % 200;
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + rand() % 200;
+
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
+
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
+
+    // then, generate a sane sub-palette
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 50 + rand() % 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 50 + rand() % 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 50 + rand() % 150;
+
+#define BRIGHTER(x) (255 - ((255 - (x)) / 3))
+#define DARKER(x) ((x) / 3)
+
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
+
+    DEFAULT_PALETTE[COLOR_DARK_BG].r = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
+    DEFAULT_PALETTE[COLOR_DARK_BG].g = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
+    DEFAULT_PALETTE[COLOR_DARK_BG].b = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
+
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = DEFAULT_PALETTE[COLOR_DEFAULT_BG].r / 3;
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = DEFAULT_PALETTE[COLOR_DEFAULT_BG].g / 3;
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = DEFAULT_PALETTE[COLOR_DEFAULT_BG].b / 3;
+
+#undef BRIGHTER
+#undef DARKER
+}
+
+static void
+store_color_palette()
+{
+    if (ipc_buffer) {
+        ipc_buffer->color_palette_len = sizeof(DEFAULT_PALETTE)/sizeof(DEFAULT_PALETTE[0]);
+        for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
+            ipc_buffer->color_palette[i][0] = DEFAULT_PALETTE[i].r;
+            ipc_buffer->color_palette[i][1] = DEFAULT_PALETTE[i].g;
+            ipc_buffer->color_palette[i][2] = DEFAULT_PALETTE[i].b;
+        }
+    }
+}
+
 static int
 choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 {
     int page_size = 5;
+
+    if (!kbhit()) {
+        present();
+        return 0;
+    }
 
     int ch = getch();
     if (ch == 0) {
@@ -456,6 +667,30 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         }
     } else if (ch == ENTERKEY) {
         return 1;
+    } else if (ch == KEY_F2) {
+        if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
+            COLOR_DEFAULT_BG = 1 + (rand()%6);
+            do {
+                COLOR_DARK_BG = 1 + (rand()%6);
+            } while (COLOR_DARK_BG == COLOR_DEFAULT_BG);
+
+            update_color_bindings();
+            update_palette();
+        } else {
+            brightness_up_down = -1;
+            while (brightness > 0) {
+                update_palette();
+            }
+
+            generate_random_palette();
+            store_color_palette();
+
+            brightness_up_down = 1;
+            while (brightness < 255) {
+                update_palette();
+            }
+        }
+
     } else if (ch == 27) {
         state->cursor = 0;
         return 1;
@@ -669,9 +904,6 @@ render_group_background(void *user_data)
             frame_label, ud->width, 0);
 }
 
-static struct IPCBuffer __far *
-ipc_buffer = NULL;
-
 static void
 ipc_buffer_add_menu_trail_entry(int selection, struct GameCatalogGroup *here)
 {
@@ -691,6 +923,15 @@ ipc_buffer_pop_menu_trail_entry(void)
     }
 }
 
+static void
+fade_out()
+{
+    brightness_up_down = -1;
+    while (brightness) {
+        present();
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // Empty keyboard buffer
@@ -698,7 +939,24 @@ int main(int argc, char *argv[])
         getch();
     }
 
+    srand(time(NULL));
+
+    display_adapter_type = detect_display_adapter();
+
+    switch (display_adapter_type) {
+        case DISPLAY_ADAPTER_CGA:
+            set_palette_entry = NULL;
+            break;
+        case DISPLAY_ADAPTER_EGA:
+            set_palette_entry = ega_set_palette_entry;
+            break;
+        case DISPLAY_ADAPTER_VGA:
+            set_palette_entry = vga_set_palette_entry;
+            break;
+    }
+
     disable_blinking_cursor();
+    enable_4bit_background();
 
     if (argc == 2) {
         static struct {
@@ -713,7 +971,22 @@ int main(int argc, char *argv[])
 
         ipc_buffer = (struct IPCBuffer __far *)(((uint32_t)dos_ipc.their_ds << 16) |
                                                 ((uint32_t)dos_ipc.their_offset));
+
+        if (ipc_buffer->color_palette_len == 0) {
+            generate_random_palette();
+            store_color_palette();
+        } else {
+            for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
+                DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
+                DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
+                DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
+            }
+        }
+    } else {
+        generate_random_palette();
     }
+
+    update_palette();
 
     FILE *fp = fopen("gamectlg.dat", "rb");
     fseek(fp, 0, SEEK_END);
@@ -796,6 +1069,7 @@ int main(int argc, char *argv[])
                         _fstrcpy(ipc_buffer->cmdline, "demo2023/");
                         _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
 
+                        fade_out();
                         return 0;
                     }
                 }
@@ -846,6 +1120,8 @@ int main(int argc, char *argv[])
     if (ipc_buffer) {
         ipc_buffer->request = IPC_EXIT;
     }
+
+    fade_out();
 
     textmode_reset();
 
