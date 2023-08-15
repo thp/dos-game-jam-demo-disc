@@ -248,8 +248,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     int fg = COLOR_DEFAULT_FG;
     int bg_cursor = COLOR_CURSOR_BG;
     int fg_cursor = COLOR_CURSOR_FG;
-    int bg_more = bg;
-    int fg_more = COLOR_MORE_FG;
     int fg_scroll = COLOR_SCROLL_FG;
     int bg_frame_label = COLOR_FRAME_LABEL_BG;
     int fg_frame_label = COLOR_FRAME_LABEL_FG;
@@ -260,8 +258,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         // reverse video
         bg_cursor = fg;
         fg_cursor = bg;
-        bg_more = bg;
-        fg_more = COLOR_DISABLED_SOFT_CONTRAST;
         fg_scroll = COLOR_DISABLED_SOFT_CONTRAST;
         bg_frame_label = COLOR_DISABLED_SOFT_CONTRAST;
         fg_frame_label = bg;
@@ -380,7 +376,26 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
             int scrollbar_height = (end - begin) * max_rows / n;
             int scrollbar_offset = (max_rows - scrollbar_height) * state->offset / (n - max_rows);
 
-            if ((i - begin) >= scrollbar_offset && (i - begin) < scrollbar_offset + scrollbar_height) {
+            // adjust size to fit the top/bottom arrows
+            scrollbar_offset += 1;
+            scrollbar_height -= 2;
+
+            if (i == begin) {
+                if (begin > 0 && color) {
+                    screen_attr = (fg_scroll << 4) | fg;
+                } else {
+                    screen_attr = (fg_scroll << 4) | bg;
+                }
+                screen_putch(0x18);
+            } else if (i == end-1) {
+                if (end < n && color) {
+                    screen_attr = (fg_scroll << 4) | fg;
+                } else {
+                    screen_attr = (fg_scroll << 4) | bg;
+                }
+                screen_putch(0x19);
+            } else if ((i - begin) >= scrollbar_offset &&
+                       (i - begin) < scrollbar_offset + scrollbar_height) {
                 screen_attr = (bg << 4) | fg_scroll;
                 screen_putch(0xdb);
             } else {
@@ -399,19 +414,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
 
     int post_y = screen_y;
 
-    if (begin > 0) {
-        int save_y = screen_y;
-        const char *pre = "(^^)";
-        screen_x = x + width - strlen(pre);
-        screen_y = pre_y - 1;
-        int save = screen_attr;
-        screen_attr = (bg_more << 4) | fg_more;
-        screen_print(pre);
-        screen_attr = save;
-        screen_x = x;
-        screen_y = save_y;
-    }
-
     screen_x = x;
     screen_y = y; y += 1;
 
@@ -424,15 +426,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     }
     screen_putch(0xbc);
     right_shadow(2);
-
-    if (end < n) {
-        const char *post = "(vv)";
-        screen_x = x + width - strlen(post);
-        int save = screen_attr;
-        screen_attr = (bg_more << 4) | fg_more;
-        screen_print(post);
-        screen_x = x;
-    }
 
     screen_x = x + 1;
     screen_y = y; y += 1;
