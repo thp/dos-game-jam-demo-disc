@@ -101,6 +101,15 @@ vga_set_palette_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b)
 }
 
 static void
+vga_set_palette_entry_direct(uint8_t index, uint8_t r, uint8_t g, uint8_t b)
+{
+    outp(0x3c8, index);
+    outp(0x3c9, r >> 2);
+    outp(0x3c9, g >> 2);
+    outp(0x3c9, b >> 2);
+}
+
+static void
 textmode_reset()
 {
     union REGS inregs, outregs;

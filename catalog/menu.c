@@ -13,6 +13,7 @@
 #define KEY_HOME (0x100 | 71)
 #define KEY_END (0x100 | 79)
 #define KEY_F2 (0x100 | 60)
+#define KEY_F3 (0x100 | 61)
 #define ENTERKEY (13)
 
 #include "gamectlg.h"
@@ -24,6 +25,12 @@ ipc_buffer = NULL;
 
 static enum DisplayAdapter
 display_adapter_type;
+
+static void
+show_screenshots(struct GameCatalog *cat, int game);
+
+static void
+configure_text_mode();
 
 #define SCREEN_WIDTH (80)
 #define SCREEN_HEIGHT (25)
@@ -138,6 +145,10 @@ print_parents_first(char *buf, struct GameCatalog *cat, struct GameCatalogGroup 
 }
 
 struct ChoiceDialogState {
+    struct GameCatalog *cat;
+    struct GameCatalogGroup *here;
+    int game;
+
     int cursor;
     int offset;
 };
@@ -211,16 +222,22 @@ render_background(const char *title)
     int save = screen_attr;
 
     static const struct {
+        uint8_t only_vga;
         const char *key;
         const char *func;
     } KEYS[] = {
-        { "ESC", "Back" },
-        { "F2", "Color Theme" },
-        { "Enter", "Go" },
-        { "Arrows", "Move" },
+        { 0, "ESC", "Back" },
+        { 0, "F2", "Color Theme" },
+        { 1, "F3", "Screenshots" },
+        { 0, "Enter", "Go" },
+        { 0, "Arrows", "Move" },
     };
 
     for (int i=0; i<sizeof(KEYS)/sizeof(KEYS[0]); ++i) {
+        if (KEYS[i].only_vga && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+            continue;
+        }
+
         screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
         screen_print(KEYS[i].key);
         screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
@@ -458,17 +475,18 @@ static struct {
 
 static void (*set_palette_entry)(uint8_t, uint8_t, uint8_t, uint8_t) = NULL;
 
+static clock_t
+update_palette_last_time = 0;
+
 static void
 update_palette()
 {
-    static clock_t last_time = 0;
-
     clock_t time = 1000ull * clock() / CLOCKS_PER_SEC;
 
-    if (!last_time) {
-        last_time = time;
+    if (!update_palette_last_time) {
+        update_palette_last_time = time;
     } else {
-        while (time > last_time) {
+        while (time > update_palette_last_time) {
             brightness += brightness_up_down * 16;
             if (brightness > 255) {
                 brightness = 255;
@@ -476,7 +494,7 @@ update_palette()
                 brightness = 0;
             }
 
-            last_time += 20;
+            update_palette_last_time += 20;
         }
     }
 
@@ -684,7 +702,14 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
                 update_palette();
             }
         }
-
+    } else if (ch == KEY_F3 && display_adapter_type == DISPLAY_ADAPTER_VGA) {
+        if (state->game != -1) {
+            // on a game page
+            show_screenshots(state->cat, state->game);
+        } else if (state->here && state->here->num_children && state->cursor > 0) {
+            // in a choice screen with a games list
+            show_screenshots(state->cat, state->here->children[state->cursor-1]);
+        }
     } else if (ch == 27) {
         state->cursor = 0;
         return 1;
@@ -880,6 +905,9 @@ render_group_background(void *user_data)
     int max = (ud->here->num_children ? ud->here->num_children : ud->here->num_subgroups);
 
     struct ChoiceDialogState cds;
+    cds.cat = ud->cat;
+    cds.here = ud->here;
+    cds.game = -1;
     cds.cursor = ud->here->cursor_index;
     cds.offset = ud->here->scroll_offset;
 
@@ -926,6 +954,185 @@ fade_out()
     }
 }
 
+static void
+configure_text_mode()
+{
+    brightness = 0;
+    brightness_up_down = 1;
+    update_palette_last_time = 0;
+
+    disable_blinking_cursor();
+    enable_4bit_background();
+    update_palette();
+}
+
+struct PCXHeader {
+    uint8_t header_field; // 0x0a
+    uint8_t version; // 5
+    uint8_t encoding; // 1 = RLE
+    uint8_t bpp; // 8
+    uint16_t min_x;
+    uint16_t min_y;
+    uint16_t max_x;
+    uint16_t max_y;
+    uint16_t dpi_x;
+    uint16_t dpi_y;
+    uint8_t ega_palette[16][3];
+    uint8_t reserved0;
+    uint8_t num_planes; // 1
+    uint16_t stride_bytes; // 320
+    uint16_t palette_mode; // 1 = color
+    uint16_t x_resolution;
+    uint16_t y_resolution;
+    uint8_t reserved1[54];
+};
+
+static void
+vga_present_pcx(const char *filename)
+{
+    FILE *fp = fopen(filename, "rb");
+    if (fp) {
+        struct PCXHeader header;
+        size_t res = fread(&header, sizeof(header), 1, fp);
+        if (res == 1) {
+            int width = (header.max_x - header.min_x + 1);
+            int height = (header.max_y - header.min_y + 1);
+
+            if (header.header_field == 0x0a &&
+                    header.version == 5 &&
+                    header.encoding == 1 &&
+                    header.bpp == 8 &&
+                    header.num_planes == 1 &&
+                    header.stride_bytes == 320 &&
+                    header.palette_mode == 1 &&
+                    width == 320 &&
+                    height == 200) {
+            } else {
+                printf("Error, unsupported format:\n");
+                printf("hdr: 0x%04x\n", header.header_field);
+                printf("version: %d\n", header.version);
+                printf("encoding: %d\n", header.encoding);
+                printf("bpp: %d\n", header.bpp);
+                printf("res: [%d, %d]-[%d, %d]\n", header.min_x, header.min_y, header.max_x, header.max_y);
+                printf("num planes: %d\n", header.num_planes);
+                printf("stride_bytes: %d\n", header.stride_bytes);
+                printf("palette_mode: %d\n", header.palette_mode);
+                printf("resolution: [%d, %d]\n", header.x_resolution, header.y_resolution);
+            }
+
+            long pixels_processed = 0;
+            uint8_t __far *VGA = (uint8_t __far *)(0xa0000000L);
+
+            static uint8_t chunk[512];
+            int len = 0;
+            int pos = 0;
+
+            for (int i=0; i<256; ++i) {
+                vga_set_palette_entry_direct(i, 0, 0, 0);
+            }
+
+            while (pixels_processed < (long)width * (long)height) {
+                if (pos == len) {
+                    pos = 0;
+                    len = fread(chunk, 1, sizeof(chunk), fp);
+                }
+                uint8_t ch = chunk[pos++];
+
+                if ((ch & 0xc0) == 0xc0) {
+                    uint8_t repeat = ch & 0x3f;
+
+                    if (pos == len) {
+                        pos = 0;
+                        len = fread(chunk, 1, sizeof(chunk), fp);
+                    }
+                    ch = chunk[pos++];
+
+                    for (int i=0; i<repeat; ++i) {
+                        VGA[pixels_processed++] = ch;
+                    }
+                } else {
+                    VGA[pixels_processed++] = ch;
+                }
+            }
+
+            fseek(fp, -(768 + 1), SEEK_END);
+            int ch = fgetc(fp);
+            if (ch == 12) {
+                for (int i=0; i<256; ++i) {
+                    int r = fgetc(fp);
+                    int g = fgetc(fp);
+                    int b = fgetc(fp);
+                    vga_set_palette_entry_direct(i, r, g, b);
+                }
+            } else {
+                // TODO: Error message (no palette)
+            }
+        } else {
+            printf("Error reading file\n");
+        }
+
+        fclose(fp);
+    } else {
+        printf("Cannot open %s\n", filename);
+        printf("Press ESC to go back to menu.\n");
+    }
+}
+
+static void
+show_screenshots(struct GameCatalog *cat, int game)
+{
+    if (cat->games[game].num_screenshots == 0) {
+        return;
+    }
+
+    fade_out();
+
+    int last_idx = -1;
+    int current_idx = 0;
+
+    // switch to mode 0x13
+    {
+        union REGS inregs, outregs;
+        inregs.h.ah = 0;
+        inregs.h.al = 0x13;
+
+        int86(0x10, &inregs, &outregs);
+    }
+
+    while (1) {
+        char filename[128];
+        sprintf(filename, "pcx/%s/shot%d.pcx", cat->ids->d[game], current_idx);
+
+        if (current_idx != last_idx) {
+            vga_present_pcx(filename);
+            last_idx = current_idx;
+        }
+
+        int ch = getch();
+        if (ch == 0) {
+            ch = 0x100 | getch();
+        }
+
+        if (ch == KEY_DOWN) {
+            if (current_idx < cat->games[game].num_screenshots - 1) {
+                ++current_idx;
+            }
+        } else if (ch == KEY_UP) {
+            if (current_idx > 0) {
+                --current_idx;
+            }
+        } else if (ch == 27 || ch == KEY_F3) {
+            // F3 toggles screenshots on and off
+            // ESC to get out of screenshot mode
+            break;
+        }
+    }
+
+    // .. and back to the menu
+    textmode_reset();
+    configure_text_mode();
+}
+
 int main(int argc, char *argv[])
 {
     // Empty keyboard buffer
@@ -948,9 +1155,6 @@ int main(int argc, char *argv[])
             set_palette_entry = vga_set_palette_entry;
             break;
     }
-
-    disable_blinking_cursor();
-    enable_4bit_background();
 
     if (argc == 2) {
         static struct {
@@ -980,7 +1184,7 @@ int main(int argc, char *argv[])
         generate_random_palette();
     }
 
-    update_palette();
+    configure_text_mode();
 
     FILE *fp = fopen("gamectlg.dat", "rb");
     fseek(fp, 0, SEEK_END);
@@ -1037,7 +1241,13 @@ int main(int argc, char *argv[])
             brud.here = here;
             brud.width = 0;
 
-            struct ChoiceDialogState cds = { 0, 0 };
+            struct ChoiceDialogState cds;
+            cds.cat = cat;
+            cds.here = here;
+            cds.game = game;
+            cds.cursor = 0;
+            cds.offset = 0;
+
             int selection = choice_dialog(-1, 5, buf, &cds, 2,
                     get_text_game, &gtgud,
                     get_label_game, NULL,
@@ -1074,8 +1284,12 @@ int main(int argc, char *argv[])
             glgud.group = here;
             int max = (here->num_children ? here->num_children : here->num_subgroups);
             struct ChoiceDialogState cds;
+            cds.cat = cat;
+            cds.here = here;
+            cds.game = game;
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
+
             int selection = choice_dialog(2, 2, buf, &cds, max + 1,
                     NULL, NULL,
                     get_label_group, &glgud,
