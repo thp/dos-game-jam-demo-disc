@@ -40,6 +40,7 @@ with open(args.infile) as fp:
         del d['Bits']
         # Normalize paths to forward slash
         d['Run'] = d['Run'].replace('\\', '/')
+        d['NumScreenshots'] = int(d['NumScreenshots'])
 
         if not d['Visible']:
             print('Skip:', d['Name'])
@@ -223,6 +224,7 @@ FLAG_JOYSTICK_SUPPORTED = (1 << 7)
 names = []
 descriptions = []
 urls = []
+ids = []
 
 def pack_strings(fp, strings):
     fp.write(struct.pack('<B', len(strings)))
@@ -246,6 +248,7 @@ with open(args.outfile, 'wb') as fp:
         names.append(game['Name'])
         descriptions.append(game['Description'])
         urls.append(game['URL'])
+        ids.append(game['ID'])
 
         genre_idx = get_string_index(game['Genre'])
         run_idx = get_string_index(game['Run'])
@@ -291,11 +294,12 @@ with open(args.outfile, 'wb') as fp:
         fp.write(struct.pack('<IBBBBBBBBBBBB', kilobytes, flags,
                              run_idx, loader_idx, jam_idx, genre_idx, exit_key_idx, type_idx,
                              author_list_idx, video_list_idx, sound_list_idx, toolchain_list_idx,
-                             0))
+                             game['NumScreenshots']))
 
     pack_strings(fp, names)
     pack_strings(fp, descriptions)
     pack_strings(fp, urls)
+    pack_strings(fp, ids)
     pack_strings(fp, strings)
 
     pack_index_list(fp, string_lists)

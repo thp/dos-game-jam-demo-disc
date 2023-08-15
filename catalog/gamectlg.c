@@ -98,6 +98,7 @@ game_catalog_parse(char *buf, int len)
     cat->names = _game_catalog_read_string_list(cat);
     cat->descriptions = _game_catalog_read_string_list(cat);
     cat->urls = _game_catalog_read_string_list(cat);
+    cat->ids = _game_catalog_read_string_list(cat);
     cat->strings = _game_catalog_read_string_list(cat);
 
     cat->string_lists = _game_catalog_read_index_list(cat);
@@ -124,6 +125,7 @@ game_catalog_free(struct GameCatalog *cat)
     free(cat->string_lists);
 
     free(cat->strings);
+    free(cat->ids);
     free(cat->urls);
     free(cat->descriptions);
     free(cat->names);

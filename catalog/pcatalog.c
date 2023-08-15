@@ -33,12 +33,14 @@ void game_catalog_print(struct GameCatalog *cat)
                 cat->games[i].kilobytes);
         printf("        D: '%s'\n", cat->descriptions->d[i]);
         printf("        U: '%s'\n", cat->urls->d[i]);
-        printf("        loader='%s', jam='%s', genre='%s', exit='%s', type='%s'\n",
+        printf("        I: '%s'\n", cat->ids->d[i]);
+        printf("        loader='%s', jam='%s', genre='%s', exit='%s', type='%s', shots=%d\n",
                 cat->strings->d[cat->games[i].loader_idx],
                 cat->strings->d[cat->games[i].jam_idx],
                 cat->strings->d[cat->games[i].genre_idx],
                 cat->strings->d[cat->games[i].exit_key_idx],
-                cat->strings->d[cat->games[i].type_idx]);
+                cat->strings->d[cat->games[i].type_idx],
+                cat->games[i].num_screenshots);
 
         printf("        F: ");
         if ((cat->games[i].flags & FLAG_HAS_END_SCREEN) != 0) {

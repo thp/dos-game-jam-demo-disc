@@ -36,7 +36,7 @@ struct GameCatalogGame {
     uint8_t sound_list_idx; /* list of supported sound cards (e.g. PC Speaker, Adlib, ...) */
     uint8_t toolchain_list_idx; /* list of used toolchains/sdks/libraries (e.g. DJGPP, ...) */
 
-    uint8_t _reserved; // UNUSED
+    uint8_t num_screenshots; /* number of screenshots (shot0.pcx, ..., shot(num_screenshots-1).pcx) */
 };
 
 struct GameCatalogGroup {
@@ -82,6 +82,7 @@ struct GameCatalog {
     struct GameCatalogStrings *names;
     struct GameCatalogStrings *descriptions;
     struct GameCatalogStrings *urls;
+    struct GameCatalogStrings *ids;
 
     /* string bucket (for _idx) */
     struct GameCatalogStrings *strings;
