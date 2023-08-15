@@ -370,6 +370,10 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         for (int j=width-1-strlen(line)-1; j>=0; --j) {
             screen_putch(' ');
         }
+        screen_putch(' ');
+        if (i == state->cursor) {
+            screen_attr = save;
+        }
         if (state->offset > 0 || end < n) {
             int save2 = screen_attr;
 
@@ -403,13 +407,10 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
                 screen_putch(0xb1);
             }
             screen_attr = save2;
+            right_shadow(2);
         } else {
-            screen_putch(' ');
+            right_border(fg, bg);
         }
-        if (i == state->cursor) {
-            screen_attr = save;
-        }
-        right_border(fg, bg);
     }
 
     int post_y = screen_y;
