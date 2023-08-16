@@ -141,6 +141,10 @@ def special_sort(group, items):
         return sorted(items, key=SOUND_ORDERING.index)
     return sorted(items)
 
+
+def sort_games_list(games_idx):
+    return sorted(games_idx, key=lambda idx: games[idx]['Name'].lower())
+
 for group, label in groupings:
     children = []
     subgroups = []
@@ -168,12 +172,13 @@ for group, label in groupings:
             if group == 'Video':
                 if value == 'Text':
                     value = 'Text Mode'
-            subgroup = make_group(value, game_indices, [])
+            subgroup = make_group(value, sort_games_list(game_indices), [])
             subgroups.append(subgroup)
 
-    root_groups.append(make_group(label, children, subgroups))
+    root_groups.append(make_group(label, sort_games_list(children), subgroups))
 
-root_groups.insert(0, make_group('All Games', list(range(len(games))), []))
+all_games_idx = sort_games_list(range(len(games)))
+root_groups.insert(0, make_group('All games (alphabetically)', all_games_idx, []))
 
 grouping = make_group('DGJ Demo Disc 2023', [], root_groups)
 
