@@ -6,6 +6,13 @@ enum DisplayAdapter {
     DISPLAY_ADAPTER_VGA = 2,
 };
 
+static const char *
+DISPLAY_ADAPTER_NAMES[] = {
+    "CGA",
+    "EGA",
+    "VGA",
+};
+
 static enum DisplayAdapter
 detect_display_adapter()
 {

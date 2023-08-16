@@ -193,7 +193,7 @@ render_background(const char *title)
 
     for (int i=0; i<SCREEN_WIDTH*SCREEN_HEIGHT; ++i) {
         SCREEN_BUFFER[i][0] = 0xb2;
-        SCREEN_BUFFER[i][1] = (1 << 4) | 7;
+        SCREEN_BUFFER[i][1] = (COLOR_DARK_BG << 4) | COLOR_DISABLED_BG;
     }
 
     for (int i=0; i<SCREEN_WIDTH; ++i) {
@@ -247,6 +247,23 @@ render_background(const char *title)
         screen_print("  ");
     }
 
+    if (ipc_buffer) {
+        char tmp[48];
+        sprintf(tmp, " Graphics: %s ", DISPLAY_ADAPTER_NAMES[display_adapter_type]);
+
+        char tmp2[48];
+        sprintf(tmp2, " Memory: %lu KiB free ", ipc_buffer->free_conventional_memory_bytes / 1024ul);
+
+        screen_attr = (COLOR_DISABLED_BG << 4) | COLOR_DARK_BG;
+
+        screen_x = (SCREEN_WIDTH - 2 - strlen(tmp) - strlen(tmp2)) / 2;
+        screen_y = 1;
+        screen_print(tmp);
+
+        screen_x += 2;
+        screen_print(tmp2);
+    }
+
     screen_attr = save;
 }
 
@@ -256,7 +273,7 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
         const char *frame_label, int width, int color)
 {
-    int max_rows = 18;
+    int max_rows = 17;
 
     screen_x = x;
     screen_y = y; y += 1;
@@ -920,7 +937,7 @@ render_group_background(void *user_data)
                 frame_label);
     }
 
-    choice_dialog_render(2, 2, &cds, max + 1,
+    choice_dialog_render(2, 3, &cds, max + 1,
             NULL, NULL,
             get_label_group, &glgud,
             frame_label, ud->width, 0);
@@ -1290,7 +1307,7 @@ int main(int argc, char *argv[])
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
 
-            int selection = choice_dialog(2, 2, buf, &cds, max + 1,
+            int selection = choice_dialog(2, 3, buf, &cds, max + 1,
                     NULL, NULL,
                     get_label_group, &glgud,
                     NULL, NULL,

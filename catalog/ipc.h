@@ -14,6 +14,8 @@ enum IPCRequest {
 };
 
 struct IPCBuffer {
+    uint32_t free_conventional_memory_bytes;
+
     uint8_t request;
     uint8_t game_flags;
 

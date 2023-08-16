@@ -7,6 +7,7 @@
 #include "gamectlg.h"
 #include "ipc.h"
 #include "vgautil.h"
+#include "mcbutil.h"
 
 static struct IPCBuffer
 ipc_buffer;
@@ -160,6 +161,10 @@ int runmenu()
 int main()
 {
     int result = 0;
+
+    // Must determine this here, as when the menu.exe is loaded, the
+    // free conventional memory will be less than what games start with.
+    ipc_buffer.free_conventional_memory_bytes = get_free_conventional_memory_bytes();
 
     while (1) {
         textmode_reset();
