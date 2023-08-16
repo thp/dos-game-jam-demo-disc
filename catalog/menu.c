@@ -26,6 +26,24 @@ ipc_buffer = NULL;
 static enum DisplayAdapter
 display_adapter_type;
 
+static int
+mouse_available = 0;
+
+static int
+have_mouse_driver()
+{
+    union REGS inregs, outregs;
+    inregs.x.ax = 0;
+
+    int86(0x33, &inregs, &outregs);
+
+    if (outregs.x.ax == 0xffff) {
+        return 1;
+    }
+
+    return 0;
+}
+
 static void
 show_screenshots(struct GameCatalog *cat, int game);
 
@@ -254,14 +272,20 @@ render_background(const char *title)
         char tmp2[48];
         sprintf(tmp2, " Memory: %lu KiB free ", ipc_buffer->free_conventional_memory_bytes / 1024ul);
 
+        char tmp3[48];
+        sprintf(tmp3, " Mouse: %s ", mouse_available ? "yes" : "no");
+
         screen_attr = (COLOR_DISABLED_BG << 4) | COLOR_DARK_BG;
 
-        screen_x = (SCREEN_WIDTH - 2 - strlen(tmp) - strlen(tmp2)) / 2;
+        screen_x = (SCREEN_WIDTH - strlen(tmp) - 2 - strlen(tmp2) - 2 - strlen(tmp3)) / 2;
         screen_y = 1;
         screen_print(tmp);
 
         screen_x += 2;
         screen_print(tmp2);
+
+        screen_x += 2;
+        screen_print(tmp3);
     }
 
     screen_attr = save;
@@ -270,7 +294,7 @@ render_background(const char *title)
 static void
 choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
-        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        const char *(*get_label_func)(int, void *, const char **), void *get_label_func_user_data,
         const char *frame_label, int width, int color)
 {
     int max_rows = 17;
@@ -396,13 +420,36 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
 
         left_border(fg, bg);
         screen_print(" ");
-        const char *line = get_label_func(i, get_label_func_user_data);
+        const char *text_right = NULL;
+        const char *line = get_label_func(i, get_label_func_user_data, &text_right);
         if (!line) {
             line = "";
         }
         screen_print(line);
-        for (int j=width-1-strlen(line)-1; j>=0; --j) {
+        int padding = width-1-strlen(line)-1;
+        if (text_right) {
+            padding -= strlen(text_right) + 2;
+        }
+        for (int j=padding; j>=0; --j) {
             screen_putch(' ');
+        }
+        if (text_right) {
+            screen_putch(' ');
+            screen_putch(' ');
+
+            int save2 = screen_attr;
+            screen_attr &= ~7;
+            if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
+                screen_attr |= COLOR_DISABLED_SOFT_CONTRAST;
+            } else {
+                if (!color) {
+                    screen_attr |= COLOR_DISABLED_SOFT_CONTRAST;
+                } else {
+                    screen_attr |= COLOR_GAME_DESCRIPTION_FG;
+                }
+            }
+            screen_print(text_right);
+            screen_attr = save2;
         }
         screen_putch(' ');
         if (i == state->cursor) {
@@ -559,7 +606,7 @@ present()
 static int
 choice_dialog_measure(int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
-        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        const char *(*get_label_func)(int, void *, const char **), void *get_label_func_user_data,
         const char *frame_label)
 {
     int width = 20;
@@ -588,11 +635,15 @@ choice_dialog_measure(int n,
     }
 
     for (int i=0; i<n; ++i) {
-        const char *line = get_label_func(i, get_label_func_user_data);
+        const char *text_right = NULL;
+        const char *line = get_label_func(i, get_label_func_user_data, &text_right);
         if (!line) {
             continue;
         }
         int len = strlen(line) + x_padding;
+        if (text_right) {
+            len += 2 + strlen(text_right);
+        }
         if (width < len) {
             width = len;
         }
@@ -738,7 +789,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 static int
 choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
-        const char *(*get_label_func)(int, void *), void *get_label_func_user_data,
+        const char *(*get_label_func)(int, void *, const char **), void *get_label_func_user_data,
         void (*render_background_func)(void *), void *render_background_func_user_data,
         const char *frame_label)
 {
@@ -778,8 +829,37 @@ struct GetLabelGroupUserData {
     struct GameCatalogGroup *group;
 };
 
+static const char *
+get_excuse(const struct GameCatalogGame *game)
+{
+    // Order these so that "hard" requirements (e.g. graphics card, which involves
+    // changing hardware) are first, and "soft" requirements (e.g. mouse driver,
+    // which may just involve loading one) are last. In case where the same type
+    // of hardware is listed (e.g. graphics card), order oldest to newest (e.g.
+    // list EGA before VGA).
+
+    if ((game->flags & FLAG_REQUIRES_EGA) != 0 && display_adapter_type == DISPLAY_ADAPTER_CGA) {
+        return "Needs EGA";
+    }
+
+    if ((game->flags & FLAG_REQUIRES_VGA) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+        return "Needs VGA";
+    }
+
+    // TODO: Allow for detecting VBE
+    if ((game->flags & FLAG_REQUIRES_VESA) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+        return "Needs VESA";
+    }
+
+    if ((game->flags & FLAG_MOUSE_REQUIRED) != 0 && !mouse_available) {
+        return "Needs mouse";
+    }
+
+    return NULL;
+}
+
 const char *
-get_label_group(int i, void *user_data)
+get_label_group(int i, void *user_data, const char **text_right)
 {
     static char tmp_buf[64];
 
@@ -795,7 +875,12 @@ get_label_group(int i, void *user_data)
         i -= 1;
 
         if (i < ud->group->num_children) {
-            return ud->cat->names->d[ud->group->children[i]];
+            int game_idx = ud->group->children[i];
+
+            //const char *excuse = get_excuse(&(ud->cat->games[game_idx]));
+            //*text_right = excuse;
+
+            return ud->cat->names->d[game_idx];
         }
 
         if (i < ud->group->num_subgroups) {
@@ -890,11 +975,20 @@ get_text_game(int i, void *user_data)
     }
     --i;
 
+    const char *excuse = get_excuse(game);
+    if (excuse) {
+        if (i == 0) {
+            sprintf(fmt_buf, "Not supported on this machine (%s)", excuse);
+            return fmt_buf;
+        }
+        --i;
+    }
+
     return NULL;
 }
 
 const char *
-get_label_game(int i, void *user_data)
+get_label_game(int i, void *user_data, const char **text_right)
 {
     if (i == 0) {
         return "(..)";
@@ -1160,6 +1254,7 @@ int main(int argc, char *argv[])
     srand(time(NULL));
 
     display_adapter_type = detect_display_adapter();
+    mouse_available = have_mouse_driver();
 
     switch (display_adapter_type) {
         case DISPLAY_ADAPTER_CGA:
@@ -1265,7 +1360,13 @@ int main(int argc, char *argv[])
             cds.cursor = 0;
             cds.offset = 0;
 
-            int selection = choice_dialog(-1, 5, buf, &cds, 2,
+            int num_choices = 2;
+            if (get_excuse(&(cat->games[game])) != NULL) {
+                // Disable launching if not supported on this machine
+                num_choices = 1;
+            }
+
+            int selection = choice_dialog(-1, 5, buf, &cds, num_choices,
                     get_text_game, &gtgud,
                     get_label_game, NULL,
                     render_group_background, &brud,

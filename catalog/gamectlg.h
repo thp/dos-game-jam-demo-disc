@@ -16,11 +16,14 @@ enum GameCatalogFlags {
     FLAG_MOUSE_REQUIRED = (1 << 5), // a mouse is strictly required to play the game
     FLAG_KEYBOARD_SUPPORTED = (1 << 6), // game can use the keyboard as input device
     FLAG_JOYSTICK_SUPPORTED = (1 << 7), // game can use the joystick as input device
+    FLAG_REQUIRES_EGA = (1 << 8), // game requires at least EGA graphics
+    FLAG_REQUIRES_VGA = (1 << 9), // game requires at least VGA graphics
+    FLAG_REQUIRES_VESA = (1 << 10), // game requires at least VESA graphics
 };
 
 struct GameCatalogGame {
     uint32_t kilobytes; /* size, number of kilobytes */
-    uint8_t flags; /* enum GameCatalogFlags */
+    uint16_t flags; /* enum GameCatalogFlags */
 
     /* the following indices are into cat->strings */
     uint8_t run_idx; /* the "run" command line (path + exe + args) */
@@ -37,6 +40,9 @@ struct GameCatalogGame {
     uint8_t toolchain_list_idx; /* list of used toolchains/sdks/libraries (e.g. DJGPP, ...) */
 
     uint8_t num_screenshots; /* number of screenshots (shot0.pcx, ..., shot(num_screenshots-1).pcx) */
+    uint8_t _pad0;
+    uint8_t _pad1;
+    uint8_t _pad2;
 };
 
 struct GameCatalogGroup {

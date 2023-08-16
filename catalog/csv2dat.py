@@ -225,6 +225,9 @@ FLAG_MOUSE_SUPPORTED = (1 << 4)
 FLAG_MOUSE_REQUIRED = (1 << 5)
 FLAG_KEYBOARD_SUPPORTED = (1 << 6)
 FLAG_JOYSTICK_SUPPORTED = (1 << 7)
+FLAG_REQUIRES_EGA = (1 << 8)
+FLAG_REQUIRES_VGA = (1 << 9)
+FLAG_REQUIRES_VESA = (1 << 10)
 
 names = []
 descriptions = []
@@ -291,15 +294,29 @@ with open(args.outfile, 'wb') as fp:
         else:
             assert game['Joystick'] == '-'
 
+        cga_supported = ('Text' in game['Video'] or 'CGA' in game['Video'])
+        ega_supported = ('EGA' in game['Video'])
+        vga_supported = ('VGA' in game['Video'])
+        vesa_supported = ('VESA' in game['Video'])
+
+        if ega_supported and not cga_supported:
+            flags |= FLAG_REQUIRES_EGA
+
+        if vga_supported and not ega_supported and not cga_supported:
+            flags |= FLAG_REQUIRES_VGA
+
+        if vesa_supported and not vga_supported and not ega_supported and not cga_supported:
+            flags |= FLAG_REQUIRES_VESA
+
         if game['Keyboard']:
             flags |= FLAG_KEYBOARD_SUPPORTED
 
         kilobytes = game['Kilobytes']
 
-        fp.write(struct.pack('<IBBBBBBBBBBBB', kilobytes, flags,
+        fp.write(struct.pack('<IHBBBBBBBBBBBBBB', kilobytes, flags,
                              run_idx, loader_idx, jam_idx, genre_idx, exit_key_idx, type_idx,
                              author_list_idx, video_list_idx, sound_list_idx, toolchain_list_idx,
-                             game['NumScreenshots']))
+                             game['NumScreenshots'], 0, 0, 0))
 
     pack_strings(fp, names)
     pack_strings(fp, descriptions)
