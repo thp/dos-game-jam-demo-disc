@@ -19,12 +19,19 @@
 #include "gamectlg.h"
 #include "ipc.h"
 #include "vgautil.h"
+#include "cpuutil.h"
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
 
 static enum DisplayAdapter
 display_adapter_type;
+
+static enum CPUType
+cpu_type;
+
+static int
+have_32bit_cpu = 0;
 
 static int
 mouse_available = 0;
@@ -266,26 +273,41 @@ render_background(const char *title)
     }
 
     if (ipc_buffer) {
-        char tmp[48];
-        sprintf(tmp, " Graphics: %s ", DISPLAY_ADAPTER_NAMES[display_adapter_type]);
+        const char *strings[4];
+        int n_strings = 0;
 
-        char tmp2[48];
-        sprintf(tmp2, " Memory: %lu KiB free ", ipc_buffer->free_conventional_memory_bytes / 1024ul);
+        char cpu_str[32];
+        sprintf(cpu_str, " CPU: %s ", CPU_TYPES[cpu_type]);
+        strings[n_strings++] = cpu_str;
 
-        char tmp3[48];
-        sprintf(tmp3, " Mouse: %s ", mouse_available ? "yes" : "no");
+        char video_str[16];
+        sprintf(video_str, " Video: %s ", DISPLAY_ADAPTER_NAMES[display_adapter_type]);
+        strings[n_strings++] = video_str;
+
+        char memory_str[32];
+        sprintf(memory_str, " Memory: %lu KiB free ", ipc_buffer->free_conventional_memory_bytes / 1024ul);
+        strings[n_strings++] = memory_str;
+
+        char mouse_str[16];
+        sprintf(mouse_str, " Mouse: %s ", mouse_available ? "yes" : "no");
+        strings[n_strings++] = mouse_str;
 
         screen_attr = (COLOR_DISABLED_BG << 4) | COLOR_DARK_BG;
 
-        screen_x = (SCREEN_WIDTH - strlen(tmp) - 2 - strlen(tmp2) - 2 - strlen(tmp3)) / 2;
+        screen_x = SCREEN_WIDTH;
+        screen_x -= 2 * (n_strings - 1);
+
+        for (int i=0; i<n_strings; ++i) {
+            screen_x -= strlen(strings[i]);
+        }
+
+        screen_x /= 2;
         screen_y = 1;
-        screen_print(tmp);
 
-        screen_x += 2;
-        screen_print(tmp2);
-
-        screen_x += 2;
-        screen_print(tmp3);
+        for (int i=0; i<n_strings; ++i) {
+            screen_print(strings[i]);
+            screen_x += 2;
+        }
     }
 
     screen_attr = save;
@@ -838,6 +860,11 @@ get_excuse(const struct GameCatalogGame *game)
     // of hardware is listed (e.g. graphics card), order oldest to newest (e.g.
     // list EGA before VGA).
 
+
+    if ((game->flags & FLAG_IS_32_BITS) != 0 && !have_32bit_cpu) {
+        return "Needs 32-bit CPU";
+    }
+
     if ((game->flags & FLAG_REQUIRES_EGA) != 0 && display_adapter_type == DISPLAY_ADAPTER_CGA) {
         return "Needs EGA";
     }
@@ -1254,6 +1281,8 @@ int main(int argc, char *argv[])
     srand(time(NULL));
 
     display_adapter_type = detect_display_adapter();
+    cpu_type = detect_cpu_type();
+    have_32bit_cpu = (cpu_type != CPU_8086 && cpu_type != CPU_286);
     mouse_available = have_mouse_driver();
 
     switch (display_adapter_type) {
