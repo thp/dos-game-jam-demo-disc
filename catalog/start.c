@@ -162,6 +162,10 @@ int main()
 {
     int result = 0;
 
+    ipc_buffer.magic = IPC_BUFFER_MAGIC;
+
+    sprintf(ipc_buffer.catalog_filename, "GAMECTLG.DAT");
+
     // Must determine this here, as when the menu.exe is loaded, the
     // free conventional memory will be less than what games start with.
     ipc_buffer.free_conventional_memory_bytes = get_free_conventional_memory_bytes();
@@ -184,7 +188,10 @@ int main()
     }
 
     textmode_reset();
-    printf("Exiting, result = %d\n", result);
+
+    if (result != 0) {
+        printf("Exiting, result = %d\n", result);
+    }
 
     return result;
 }

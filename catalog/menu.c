@@ -1326,32 +1326,53 @@ int main(int argc, char *argv[])
         ipc_buffer = (struct IPCBuffer __far *)(((uint32_t)dos_ipc.their_ds << 16) |
                                                 ((uint32_t)dos_ipc.their_offset));
 
-        if (ipc_buffer->color_palette_len == 0) {
-            generate_random_palette();
-            store_color_palette();
-        } else {
-            for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
-                DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
-                DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
-                DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
+        if (ipc_buffer && ipc_buffer->magic != IPC_BUFFER_MAGIC) {
+            ipc_buffer = NULL;
+        }
+
+        if (ipc_buffer) {
+            if (ipc_buffer->color_palette_len == 0) {
+                generate_random_palette();
+                store_color_palette();
+            } else {
+                for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
+                    DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
+                    DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
+                    DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
+                }
             }
         }
-    } else {
-        generate_random_palette();
+    }
+
+    if (!ipc_buffer) {
+        printf("Use START.EXE to start the menu.\n");
+        return 1;
+    }
+
+    char *filename = malloc(sizeof(ipc_buffer->catalog_filename));
+    _fmemcpy(filename, ipc_buffer->catalog_filename, sizeof(ipc_buffer->catalog_filename));
+    FILE *fp = fopen(filename, "rb");
+    int did_read = 0;
+    char *buf = 0;
+    size_t len = 0;
+    if (fp) {
+        fseek(fp, 0, SEEK_END);
+        len = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        buf = malloc(len);
+        if (fread(buf, len, 1, fp) == 1) {
+            did_read = 1;
+        }
+        fclose(fp);
+    }
+
+    if (!did_read) {
+        printf("Failed to read '%s'\n", filename);
+        getch();
+        exit(1);
     }
 
     configure_text_mode();
-
-    FILE *fp = fopen("gamectlg.dat", "rb");
-    fseek(fp, 0, SEEK_END);
-    size_t len = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    char *buf = malloc(len);
-    if (fread(buf, len, 1, fp) != 1) {
-        printf("failed to read\n");
-        exit(1);
-    }
-    fclose(fp);
 
     // cat takes ownership of "buf"
     struct GameCatalog *cat = game_catalog_parse(buf, len);

@@ -1,4 +1,4 @@
-default: gamectlg.dat menu.exe start.exe
+default: gamectlg.dat menu.exe start.exe demodisc.iso
 
 ifeq ($V,1)
 PYTHON_EXTRA := --verbose
@@ -18,7 +18,13 @@ menu.exe: menu.c gamectlg.c
 start.exe: start.c
 	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s
 
+demodisc.iso: gamectlg.dat menu.exe start.exe
+	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -o $@ -f layout
+
 clean:
 	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o menu.exe start.exe start.o menu.o
 
-.PHONY: clean default extra
+distclean: clean
+	$(RM) demodisc.iso
+
+.PHONY: clean default extra distclean

@@ -13,7 +13,12 @@ enum IPCRequest {
     IPC_RUN_GAME = 1,
 };
 
+#define IPC_BUFFER_MAGIC (0xd05d2023)
+
 struct IPCBuffer {
+    uint32_t magic;
+    char catalog_filename[64];
+
     uint32_t free_conventional_memory_bytes;
 
     uint8_t request;
