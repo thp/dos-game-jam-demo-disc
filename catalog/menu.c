@@ -128,6 +128,13 @@ brightness = 0;
 static int
 brightness_up_down = 1;
 
+static int
+is_fading()
+{
+    return ((brightness > 0 && brightness_up_down == -1) ||
+            (brightness < 255 && brightness_up_down == 1));
+}
+
 static void
 screen_putch(char ch)
 {
@@ -733,9 +740,13 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 {
     int page_size = 5;
 
-    if (!kbhit()) {
-        present();
-        return 0;
+    // only busy-loop if we're actively fading the menu, to
+    // avoid extraneous redraws / "snow" in the graphics
+    if (is_fading()) {
+        if (!kbhit()) {
+            present();
+            return 0;
+        }
     }
 
     int ch = getch();
