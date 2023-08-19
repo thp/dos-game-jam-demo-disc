@@ -40,7 +40,7 @@ struct GameCatalogGame {
     uint8_t toolchain_list_idx; /* list of used toolchains/sdks/libraries (e.g. DJGPP, ...) */
 
     uint8_t num_screenshots; /* number of screenshots (shot0.pcx, ..., shot(num_screenshots-1).pcx) */
-    uint8_t _pad0;
+    uint8_t prefix_idx; /* prefix where the content is to be found */
     uint8_t _pad1;
     uint8_t _pad2;
 };

@@ -25,6 +25,7 @@ with open(args.infile) as fp:
     for parts in reader:
         print(parts)
         d = dict(parts)
+        assert d['Kind'] in ('GAME', 'TOOL')
         d['Kilobytes'] = int(d['Kilobytes'] or -1)
         d['Visible'] = (d['Visible'] == 'Y')
         d['Keyboard'] = (d['Keyboard'] == 'Y')
@@ -48,8 +49,10 @@ with open(args.infile) as fp:
 
         print(d)
         games.append(d)
-        for k, v in d.items():
-            values[k].add(v)
+        if d['Kind'] == 'GAME':
+            for k, v in d.items():
+                values[k].add(v)
+
 
 import pprint
 #pprint.pprint(values)
@@ -155,7 +158,8 @@ for group, label in groupings:
         print(group, '/', value)
         game_indices = []
         for game_idx, game in enumerate(games):
-            if value == game[group] or (isinstance(game[group], tuple) and value in game[group]):
+            if game['Kind'] == 'GAME' and (value == game[group] or
+                                           (isinstance(game[group], tuple) and value in game[group])):
                 print('\t', game['Name'])
                 game_indices.append(game_idx)
 
@@ -177,10 +181,15 @@ for group, label in groupings:
 
     root_groups.append(make_group(label, sort_games_list(children), subgroups))
 
-all_games_idx = sort_games_list(range(len(games)))
+all_games_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'GAME'])
 root_groups.insert(0, make_group('All games (alphabetically)', all_games_idx, []))
 
-grouping = make_group('DGJ Demo Disc 2023', [], root_groups)
+extras_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'TOOL'])
+
+grouping = make_group('DGJ Demo Disc 2023', [], [
+    make_group('Games', [], root_groups),
+    make_group('Extras', extras_idx, []),
+])
 
 # TODO: Sort games and/or sub-groups?
 
@@ -229,6 +238,11 @@ FLAG_REQUIRES_EGA = (1 << 8)
 FLAG_REQUIRES_VGA = (1 << 9)
 FLAG_REQUIRES_VESA = (1 << 10)
 
+PREFIX_STRINGS = {
+    'GAME': 'DEMO2023/',
+    'TOOL': 'EXTRAS/',
+}
+
 names = []
 descriptions = []
 urls = []
@@ -268,6 +282,7 @@ with open(args.outfile, 'wb') as fp:
         sound_list_idx = make_string_list(game['Sound'])
         toolchain_list_idx = make_string_list(game['Toolchain'])
         type_idx = get_string_index(game['Type'])
+        prefix_idx = get_string_index(PREFIX_STRINGS[game['Kind']])
 
         cpu_bits = {'16-bit': 16, '32-bit': 32}[game['CPU']]
 
@@ -316,7 +331,7 @@ with open(args.outfile, 'wb') as fp:
         fp.write(struct.pack('<IHBBBBBBBBBBBBBB', kilobytes, flags,
                              run_idx, loader_idx, jam_idx, genre_idx, exit_key_idx, type_idx,
                              author_list_idx, video_list_idx, sound_list_idx, toolchain_list_idx,
-                             game['NumScreenshots'], 0, 0, 0))
+                             game['NumScreenshots'], prefix_idx, 0, 0))
 
     pack_strings(fp, names)
     pack_strings(fp, descriptions)

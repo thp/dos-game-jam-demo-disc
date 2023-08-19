@@ -981,13 +981,15 @@ get_text_game(int i, void *user_data)
     }
     --i;
 
-    if (i == 0) {
-        sprintf(fmt_buf, "Jam: %s, Genre: %s",
-                ud->cat->strings->d[game->jam_idx],
-                ud->cat->strings->d[game->genre_idx]);
-        return fmt_buf;
+    if (game->jam_idx && game->genre_idx) {
+        if (i == 0) {
+            sprintf(fmt_buf, "Jam: %s, Genre: %s",
+                    ud->cat->strings->d[game->jam_idx],
+                    ud->cat->strings->d[game->genre_idx]);
+            return fmt_buf;
+        }
+        --i;
     }
-    --i;
 
     if (i == 0) {
         sprintf(fmt_buf, "%s, %s",
@@ -1035,7 +1037,7 @@ get_label_game(int i, void *user_data, const char **text_right)
     if (i == 0) {
         return "(..)";
     } else if (i == 1) {
-        return "Launch Game";
+        return "Launch";
     }
 
     return NULL;
@@ -1453,7 +1455,7 @@ int main(int argc, char *argv[])
                         ipc_buffer->request = IPC_RUN_GAME;
                         ipc_buffer->game_flags = cat->games[game].flags;
 
-                        _fstrcpy(ipc_buffer->cmdline, "demo2023/");
+                        _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
                         _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
 
                         fade_out();
