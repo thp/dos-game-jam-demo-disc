@@ -116,7 +116,7 @@ int rungame()
     } else {
         if ((ipc_buffer.game_flags & FLAG_HAS_END_SCREEN) != 0) {
             // show end screen
-            printf("(press any key to return to menu)");
+            printf("\r\n(press any key to return to menu)");
             fflush(stdout);
             getch();
         }
