@@ -626,11 +626,11 @@ update_palette()
 static void
 present()
 {
-    update_palette();
-
     // wait for vertical retrace before copying
     while ((inp(0x3DA) & 8) != 0);
     while ((inp(0x3DA) & 8) == 0);
+
+    update_palette();
 
     short __far *screen = (short __far *)(0xb8000000L);
     _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
