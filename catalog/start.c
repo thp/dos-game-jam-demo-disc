@@ -108,6 +108,7 @@ int rungame()
     regs.x.dx = (unsigned)dir;
     intdosx(&regs, &regs, &segs);
 
+    printf("Launching %s...\n", ipc_buffer.title);
     int error = run_command(file, args);
 
     if (error) {
@@ -154,12 +155,16 @@ int runmenu()
     *dest++ = HEXDIGITS[(my_offset >> 0)&0xF];
     *dest++ = '\0';
 
+    printf("Launching menu...\n");
     return (run_command("menu.exe", args) == 0);
 }
 
 
 int main()
 {
+    printf("DOS Game Jam Demo Disc START.EXE\n");
+    printf("Git rev %s (%s, %s)\n", VERSION, BUILDDATE, BUILDTIME);
+
     int result = 0;
 
     ipc_buffer.magic = IPC_BUFFER_MAGIC;
@@ -168,7 +173,14 @@ int main()
 
     // Must determine this here, as when the menu.exe is loaded, the
     // free conventional memory will be less than what games start with.
+    printf("Free conventional memory: ");
+    fflush(stdout);
     ipc_buffer.free_conventional_memory_bytes = get_free_conventional_memory_bytes();
+    printf("%lu bytes\n", ipc_buffer.free_conventional_memory_bytes);
+    fflush(stdout);
+
+    // show meta information for at least a second, even on fast machines
+    sleep(1);
 
     while (1) {
         textmode_reset();

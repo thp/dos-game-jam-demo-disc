@@ -1,5 +1,9 @@
 default: gamectlg.dat menu.exe start.exe demodisc.iso
 
+CFLAGS_VERSION += -DVERSION=\"$(shell git describe --always --dirty)\"
+CFLAGS_VERSION += -DBUILDDATE=\"$(shell env LC_ALL=C date +%F)\"
+CFLAGS_VERSION += -DBUILDTIME=\"$(shell env LC_ALL=C date +%R)\"
+
 ifeq ($V,1)
 PYTHON_EXTRA := --verbose
 endif
@@ -13,10 +17,10 @@ pcatalog: pcatalog.c gamectlg.c
 	$(CC) -o $@ $^
 
 menu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s
+	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
 
 start.exe: start.c
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s
+	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
 
 demodisc.iso: gamectlg.dat menu.exe start.exe
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -o $@ -f layout

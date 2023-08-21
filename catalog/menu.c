@@ -1408,6 +1408,10 @@ int main(int argc, char *argv[])
 
         if (here->parent_group) {
             print_parents_first(buf, cat, here->parent_group);
+        } else {
+            sprintf(buf, "%s -- Git rev %s (built %s %s)",
+                    cat->strings->d[cat->grouping->title_idx],
+                    VERSION, BUILDDATE, BUILDTIME);
         }
 
         if (game != -1) {
@@ -1454,6 +1458,8 @@ int main(int argc, char *argv[])
                     if (ipc_buffer) {
                         ipc_buffer->request = IPC_RUN_GAME;
                         ipc_buffer->game_flags = cat->games[game].flags;
+
+                        _fstrcpy(ipc_buffer->title, cat->names->d[game]);
 
                         _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
                         _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
