@@ -11,7 +11,5 @@ for basedir in ('DEMO2023', 'pcx', 'extras'):
                 print(dirname, filename)
             if '.' in filename:
                 base, ext = filename.split('.', 1)
-                if len(base) > 8:
-                    print(dirname, filename)
-                if len(ext) > 3:
-                    print(dirname, filename)
+                if len(base) > 8 or len(ext) > 3:
+                    print('/'.join((dirname, filename)))
