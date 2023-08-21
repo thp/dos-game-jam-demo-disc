@@ -142,6 +142,8 @@ def special_sort(group, items):
         return sorted(items, key=VIDEO_ORDERING.index)
     elif group == 'Sound':
         return sorted(items, key=SOUND_ORDERING.index)
+    elif group == 'Author':
+        return sorted(items, key=lambda x: x.lower())
     return sorted(items)
 
 
