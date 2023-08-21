@@ -40,6 +40,11 @@ get_free_conventional_memory_bytes()
         }
 
         mcb += 1 + mcb->wSizeParas;
+
+        if (mcb->bSignature != 'M' && mcb->bSignature != 'Z') {
+            // Something is wrong, but just mysteriously break out for now...
+            break;
+        }
     }
 
     return largest;
