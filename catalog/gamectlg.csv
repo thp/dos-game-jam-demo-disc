@@ -54,6 +54,7 @@ SDK,https://sourceforge.net/projects/freepascal/files/DOS_Go32v2/3.2.2/,Free Pas
 SDK,https://www.nasm.us/,NASM,SDK,Y,The Netwide Assembler,,,The NASM Authors,,,0,nasm-2.16.01-dos.zip,nasm/nasm.exe,,Text,N,Y,Y,,,-,-,-,32,NASM,Y,Available,nasm,0
 DRV,https://cutemouse.sourceforge.net/,CuteMouse,Driver,Y,Multi-protocol mouse driver for DOS,,,"Daniel Nagy, mceric",,,0,,mouse/ctmou21b/bin/ctmouse.exe,,Text,,,Y,,,-,-,,16,,Y,Available,ctmouse,0
 TOOL,https://www.ritlabs.com/en/products/dn/,DOS Navigator,File Manager,Y,Shell/file manager for DOS,,,Ritlabs,,,0,,dn151/dn.com,,Text,,,,,,Optional,-,,16,,Y,Available,dn,0
+TOOL,https://ftp.nluug.nl/pub/vim/pc/,Vim,Text Editor,Y,Screen-based modal text editor,,,Bram Moolenaar,,,0,vim73_46d32.zip,vim73/vim.exe,,Text,N,Y,N,:wq,,-,-,-,32,DJGPP,Y,Available,vim,0
 DRV,https://github.com/crazii/SBEMU,SBEMU,Driver,Y,Sound Blaster/OPL3 emulator for AC97/HDA,,,crazii,,,0,,sbemu/sbemu.exe,,Text,,,Y,,,-,-,-,32,,Y,Included,sbemu,0
 DRV,https://github.com/pdewacht/adlipt,ADLiPT (OPL2LPT),Driver,Y,TSR emulating an Adlib sound card with OPL2LPT,,,Peter De Wachter,,,0,oplutil.zip,adlipt/adlipt.exe,,Text,N,N,Y,,,-,-,Adlib,32,OpenWatcom 32-bit,Y,Available,adlipt,0
 DRV,http://scitechsoft.com/ftp/sdd/,UniVBE,Driver,Y,TSR providing VBE extensions for many graphics cards,,,SciTech Software Inc.,,,0,univbe67.exe,univbe/univbe.exe,,Text,N,N,Y,,,-,-,-,16,,,,univbe,0
