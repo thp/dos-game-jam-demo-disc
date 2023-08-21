@@ -995,9 +995,9 @@ get_text_game(int i, void *user_data)
     }
 
     if (i == 0) {
-        sprintf(fmt_buf, "%s, %s",
+        sprintf(fmt_buf, "%s%s",
                 (game->flags & FLAG_IS_32_BITS) ? "386+" : "8088+",
-                (game->flags & FLAG_IS_MULTIPLAYER) ? "multiplayer" : "single-player",
+                (game->flags & FLAG_IS_MULTIPLAYER) ? ", multiplayer" : "",
                 ud->cat->strings->d[game->genre_idx]);
 
         if ((game->flags & FLAG_MOUSE_SUPPORTED) != 0) {
