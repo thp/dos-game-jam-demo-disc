@@ -640,10 +640,11 @@ static int
 choice_dialog_measure(int n,
         const char *(*get_text_func)(int, void *), void *get_text_func_user_data,
         const char *(*get_label_func)(int, void *, const char **), void *get_label_func_user_data,
-        const char *frame_label)
+        const char *frame_label, int *out_height)
 {
     int width = 20;
     int x_padding = 3;
+    int height = 2;
 
     // Determine minimum width
 
@@ -658,6 +659,8 @@ choice_dialog_measure(int n,
         int k = 0;
         const char *line = get_text_func(k++, get_text_func_user_data);
         while (line != NULL) {
+            ++height;
+
             int len = strlen(line) + x_padding;
             if (width < len) {
                 width = len;
@@ -673,6 +676,7 @@ choice_dialog_measure(int n,
         if (!line) {
             continue;
         }
+        ++height;
         int len = strlen(line) + x_padding;
         if (text_right) {
             len += 2 + strlen(text_right);
@@ -681,6 +685,8 @@ choice_dialog_measure(int n,
             width = len;
         }
     }
+
+    *out_height = height;
 
     return width + 1;
 }
@@ -830,10 +836,18 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
         void (*render_background_func)(void *), void *render_background_func_user_data,
         const char *frame_label)
 {
+    int height = -1;
     int width = choice_dialog_measure(n,
             get_text_func, get_text_func_user_data,
             get_label_func, get_label_func_user_data,
-            frame_label);
+            frame_label, &height);
+
+    if (y == -1) {
+        y = 5;
+        if (y + height > 20) {
+            y = (SCREEN_HEIGHT - height - 1) / 2;
+        }
+    }
 
     if (x == -1) {
         x = (SCREEN_WIDTH - width) / 2;
@@ -1075,7 +1089,7 @@ render_group_background(void *user_data)
         ud->width = choice_dialog_measure(max + 1,
                 NULL, NULL,
                 get_label_group, &glgud,
-                frame_label);
+                frame_label, NULL);
     }
 
     choice_dialog_render(2, 3, &cds, max + 1,
@@ -1440,7 +1454,7 @@ int main(int argc, char *argv[])
                 num_choices = 1;
             }
 
-            int selection = choice_dialog(-1, 5, buf, &cds, num_choices,
+            int selection = choice_dialog(-1, -1, buf, &cds, num_choices,
                     get_text_game, &gtgud,
                     get_label_game, NULL,
                     render_group_background, &brud,
