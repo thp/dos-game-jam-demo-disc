@@ -51,6 +51,7 @@ SDK,https://www.delorie.com/djgpp/,DJGPP,SDK,Y,32-bit C/C++ Environment for DOS 
 SDK,https://open-watcom.github.io/,OpenWatcom v2,SDK,Y,C/C++ Compiler Suite (16-bit and 32-bit),,,Open Watcom Project,,,0,,ow20dos.exe,,Text,,,,,,-,-,-,32,,Y,Available,watcom,0
 SDK,https://liballeg.org/old.html,Allegro 4.2.3,SDK,Y,Cross-platform game development library,,,Shawn Hargreaves,,,0,all4231.zip,all4231.zip,,Text,N,Y,N,,,-,-,-,32,DJGPP,Y,Included,allegro4,0
 SDK,https://sourceforge.net/projects/freepascal/files/DOS_Go32v2/3.2.2/,Free Pascal,SDK,Y,32-bit Pascal Environment for DOS,,,"Carl Eric Codère, Daniël Mantione, Florian Klämpfl",,,0,dos322full.zip,fpascal/install.exe,,Text,N,Y,N,,,-,-,-,32,FreePascal,Y,Available,fpascal,0
+SDK,https://www.nasm.us/,NASM,SDK,Y,The Netwide Assembler,,,The NASM Authors,,,0,nasm-2.16.01-dos.zip,nasm/nasm.exe,,Text,N,Y,Y,,,-,-,-,32,NASM,Y,Available,nasm,0
 DRV,https://cutemouse.sourceforge.net/,CuteMouse,Driver,Y,Multi-protocol mouse driver for DOS,,,"Daniel Nagy, mceric",,,0,,mouse/ctmou21b/bin/ctmouse.exe,,Text,,,Y,,,-,-,,16,,Y,Available,ctmouse,0
 TOOL,https://www.ritlabs.com/en/products/dn/,DOS Navigator,File Manager,Y,Shell/file manager for DOS,,,Ritlabs,,,0,,dn151/dn.com,,Text,,,,,,Optional,-,,16,,Y,Available,dn,0
 DRV,https://github.com/crazii/SBEMU,SBEMU,Driver,Y,Sound Blaster/OPL3 emulator for AC97/HDA,,,crazii,,,0,,sbemu/sbemu.exe,,Text,,,Y,,,-,-,-,32,,Y,Included,sbemu,0
