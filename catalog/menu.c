@@ -927,10 +927,13 @@ get_label_group(int i, void *user_data, const char **text_right)
 
         if (i < ud->group->num_subgroups) {
             struct GameCatalogGroup *subgroup = ud->group->subgroups[i];
-            sprintf(tmp_buf, "%s (%d)",
-                    ud->cat->strings->d[subgroup->title_idx],
-                    subgroup->num_children + subgroup->num_subgroups);
-            return tmp_buf;
+
+            if (subgroup->num_children) {
+                sprintf(tmp_buf, "%d", subgroup->num_children);
+                *text_right = tmp_buf;
+            }
+
+            return ud->cat->strings->d[subgroup->title_idx];
         }
     }
 

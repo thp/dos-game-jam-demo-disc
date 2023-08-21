@@ -25,7 +25,7 @@ with open(args.infile) as fp:
     for parts in reader:
         print(parts)
         d = dict(parts)
-        assert d['Kind'] in ('GAME', 'TOOL')
+        assert d['Kind'] in ('GAME', 'TOOL', 'DRV', 'SDK')
         d['Kilobytes'] = int(d['Kilobytes'] or -1)
         d['Visible'] = (d['Visible'] == 'Y')
         d['Keyboard'] = (d['Keyboard'] == 'Y')
@@ -184,11 +184,15 @@ for group, label in groupings:
 all_games_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'GAME'])
 root_groups.insert(0, make_group('All games (alphabetically)', all_games_idx, []))
 
-extras_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'TOOL'])
+tools_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'TOOL'])
+sdks_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'SDK'])
+drivers_idx = sort_games_list([idx for idx in range(len(games)) if games[idx]['Kind'] == 'DRV'])
 
 grouping = make_group('DGJ Demo Disc 2023', [], [
     make_group('Games', [], root_groups),
-    make_group('Extras', extras_idx, []),
+    make_group('Tools', tools_idx, []),
+    make_group('SDKs', sdks_idx, []),
+    make_group('Drivers', drivers_idx, []),
 ])
 
 # TODO: Sort games and/or sub-groups?
@@ -241,6 +245,8 @@ FLAG_REQUIRES_VESA = (1 << 10)
 PREFIX_STRINGS = {
     'GAME': 'DEMO2023/',
     'TOOL': 'EXTRAS/',
+    'DRV': 'EXTRAS/',
+    'SDK': 'SDKS/',
 }
 
 names = []
