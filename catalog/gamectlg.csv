@@ -50,7 +50,7 @@ TOOL,https://github.com/DIVGAMES/DIV-Games-Studio,DIV Games Studio,SDK,,DIV Game
 TOOL,https://www.delorie.com/djgpp/,DJGPP,SDK,Y,32-bit C/C++ Environment for DOS (GCC),,,DJ Delorie,,,0,djgpp,,,Text,,,,,,-,-,-,32,,Y,Included,djgpp,0
 TOOL,https://open-watcom.github.io/,OpenWatcom v2,SDK,Y,C/C++ Compiler Suite (16-bit and 32-bit),,,Open Watcom Project,,,0,,sdks/ow20dos.exe,,Text,,,,,,-,-,-,32,,Y,Available,watcom,0
 TOOL,https://liballeg.org/old.html,Allegro 4.2.3,SDK,Y,Cross-platform game development library,,,Shawn Hargreaves,,,0,all4231.zip,sdks/all4231.zip,,Text,N,Y,N,,,-,-,-,32,DJGPP,Y,Included,allegro4,0
-TOOL,https://sourceforge.net/projects/freepascal/files/DOS_Go32v2/3.2.2/,Free Pascal,SDK,,32-bit Pascal Environment for DOS,,,,,,,dos322full.zip,,,,,,,,,,,,,,,,,0
+TOOL,https://sourceforge.net/projects/freepascal/files/DOS_Go32v2/3.2.2/,Free Pascal,SDK,Y,32-bit Pascal Environment for DOS,,,"Carl Eric Codère, Daniël Mantione, Florian Klämpfl",,,0,dos322full.zip,sdks/fpascal/install.exe,,Text,N,Y,N,,,-,-,-,32,FreePascal,Y,Available,fpascal,0
 TOOL,https://cutemouse.sourceforge.net/,CuteMouse,Driver,Y,Multi-protocol mouse driver for DOS,,,"Daniel Nagy, mceric",,,0,,mouse/ctmou21b/bin/ctmouse.exe,,Text,,,Y,,,-,-,,16,,Y,Available,ctmouse,0
 TOOL,https://www.ritlabs.com/en/products/dn/,DOS Navigator,File Manager,Y,Shell/file manager for DOS,,,Ritlabs,,,0,,dn151/dn.com,,Text,,,,,,Optional,-,,16,,Y,Available,dn,0
 TOOL,https://github.com/crazii/SBEMU,SBEMU,Driver,Y,Sound Blaster/OPL3 emulator for AC97,,,crazii,,,0,,sbemu/sbemu.exe,,Text,,,Y,,,-,-,-,32,,Y,Included,sbemu,0
