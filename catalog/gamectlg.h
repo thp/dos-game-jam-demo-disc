@@ -19,6 +19,7 @@ enum GameCatalogFlags {
     FLAG_REQUIRES_EGA = (1 << 8), // game requires at least EGA graphics
     FLAG_REQUIRES_VGA = (1 << 9), // game requires at least VGA graphics
     FLAG_REQUIRES_VESA = (1 << 10), // game requires at least VESA graphics
+    FLAG_DOSBOX_INCOMPATIBLE = (1 << 11), // game is incompatible with stock DOSBox
 };
 
 struct GameCatalogGame {

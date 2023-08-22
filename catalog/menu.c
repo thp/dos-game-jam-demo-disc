@@ -20,6 +20,7 @@
 #include "ipc.h"
 #include "vgautil.h"
 #include "cpuutil.h"
+#include "emuutil.h"
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
@@ -29,6 +30,9 @@ display_adapter_type;
 
 static enum CPUType
 cpu_type;
+
+static enum DOSEmulator
+emulator_type;
 
 static int
 have_32bit_cpu = 0;
@@ -286,6 +290,12 @@ render_background(const char *title)
         char cpu_str[32];
         sprintf(cpu_str, " CPU: %s ", CPU_TYPES[cpu_type]);
         strings[n_strings++] = cpu_str;
+
+        if (emulator_type != EMULATOR_NONE) {
+            strcat(cpu_str, "(");
+            strcat(cpu_str, EMULATOR_TYPES[emulator_type]);
+            strcat(cpu_str, ") ");
+        }
 
         char video_str[16];
         sprintf(video_str, " Video: %s ", DISPLAY_ADAPTER_NAMES[display_adapter_type]);
@@ -889,6 +899,9 @@ get_excuse(const struct GameCatalogGame *game)
     // of hardware is listed (e.g. graphics card), order oldest to newest (e.g.
     // list EGA before VGA).
 
+    if ((game->flags & FLAG_DOSBOX_INCOMPATIBLE) && emulator_type == EMULATOR_DOSBOX) {
+        return "Incompatible with DOSBox";
+    }
 
     if ((game->flags & FLAG_IS_32_BITS) != 0 && !have_32bit_cpu) {
         return "Needs 32-bit CPU";
@@ -1317,6 +1330,7 @@ int main(int argc, char *argv[])
     display_adapter_type = detect_display_adapter();
     cpu_type = detect_cpu_type();
     have_32bit_cpu = (cpu_type != CPU_8086 && cpu_type != CPU_286);
+    emulator_type = detect_dos_emulator();
     mouse_available = have_mouse_driver();
 
     switch (display_adapter_type) {

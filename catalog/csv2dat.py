@@ -33,6 +33,7 @@ with open(args.infile) as fp:
         d['Keyboard'] = (d['Keyboard'] == 'Y')
         d['EndScreen'] = (d['EndScreen'] == 'Y')
         d['Open Source'] = (d['Open Source'] == 'Y')
+        d['IncompatibleDOSBox'] = (d['IncompatibleDOSBox'] == 'Y')
         d['Video'] = tuple(d['Video'].split(', '))
         d['Sound'] = tuple(x for x in d['Sound'].split(', ') if x != '-')
         d['Author'] = tuple(d['Author'].split(', '))
@@ -243,6 +244,7 @@ FLAG_JOYSTICK_SUPPORTED = (1 << 7)
 FLAG_REQUIRES_EGA = (1 << 8)
 FLAG_REQUIRES_VGA = (1 << 9)
 FLAG_REQUIRES_VESA = (1 << 10)
+FLAG_DOSBOX_INCOMPATIBLE = (1 << 11)
 
 PREFIX_STRINGS = {
     'GAME': 'DEMO2023/',
@@ -333,6 +335,9 @@ with open(args.outfile, 'wb') as fp:
 
         if game['Keyboard']:
             flags |= FLAG_KEYBOARD_SUPPORTED
+
+        if game['IncompatibleDOSBox']:
+            flags |= FLAG_DOSBOX_INCOMPATIBLE
 
         kilobytes = game['Kilobytes']
 
