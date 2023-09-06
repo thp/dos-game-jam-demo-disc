@@ -113,6 +113,7 @@ JAMS_ORDERING = [
     'August 2022 Jam',
     'EOY Jam 2022',
     'June 2023',
+    'DOS COM Game Jam',
     'Other',
 ]
 
