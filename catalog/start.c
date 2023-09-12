@@ -9,6 +9,8 @@
 #include "vgautil.h"
 #include "mcbutil.h"
 
+#include "chain.h"
+
 static struct IPCBuffer
 ipc_buffer;
 
@@ -159,11 +161,138 @@ int runmenu()
     return (run_command("menu.exe", args) == 0);
 }
 
+static void _interrupt _far
+(*old_int21_handler)(void);
+
+static char
+original_filename_buf[64];
+
+static char
+redirect_filename_buf[64];
+
+/**
+ * This dummy function is used here to provide
+ * some data storage in the code segment.
+ *
+ * While we are executing in hook_int21(), "cs" is
+ * is set to this function's code segment, and we
+ * can use its offset to read the "ds" of this
+ * module and get a pointer to redirect_filename_buf.
+ **/
+static int
+dummy_function_for_data_storage(int a)
+{
+    int res = 0;
+    for (int i=0; i<a; ++i) {
+        res += a;
+    }
+    return res;
+}
+
+struct DummyFunctionDataStorage {
+    short ds;
+    short original_filename_buf_offset;
+    short redirect_filename_buf_offset;
+};
+
+static void _interrupt
+hook_int21(union INTPACK r)
+{
+    /**
+     * 3C = create/truncate file
+     * 3D = open existing file (AL = 0 read only, AL = 1 write only, AL = 2 read/write)
+     **/
+    if (r.h.ah == 0x3c || r.h.ah == 0x3d) {
+        int is_write = (r.h.ah == 0x3c || (r.h.ah == 0x3d && (r.h.al == 1 || r.h.al == 2)));
+
+        // Store original ds/dx values here
+        unsigned short orig_ds = r.w.ds;
+        unsigned short orig_dx = r.w.dx;
+
+        /* Determine DS from CS */
+        struct DummyFunctionDataStorage far *dfds =
+            (struct DummyFunctionDataStorage far *)dummy_function_for_data_storage;
+
+        /* filename to open */
+        char far *filename = MK_FP(r.w.ds, r.w.dx);
+        char far *original_filename_far = MK_FP(dfds->ds, dfds->original_filename_buf_offset);
+        char far *redirect_filename_far = MK_FP(dfds->ds, dfds->redirect_filename_buf_offset);
+
+        char far *fn_cmp = filename;
+        char far *or_cmp = original_filename_far;
+
+        while (*fn_cmp != '\0' && *fn_cmp == *or_cmp) {
+            ++fn_cmp;
+            ++or_cmp;
+        }
+
+        if (*fn_cmp == '\0' && *or_cmp == '\0') {
+            filename = redirect_filename_far;
+            r.w.ds = FP_SEG(filename);
+            r.w.dx = FP_OFF(filename);
+
+            {
+                // dump the filename to the text/CGA screen
+                short __far *cga = (short __far *)(0xb8000000L);
+                char __far *vga = (char __far *)(0xa0000000L);
+
+                int i = 0;
+                while (filename[i]) {
+                    cga[i] = (filename[i]) | 0x0200;
+                    vga[i] = filename[i];
+
+                    ++i;
+                }
+            }
+
+            _chain_intr_dsdx(old_int21_handler, orig_ds, orig_dx);
+        }
+    }
+
+    // Just chain normally
+    _chain_intr(old_int21_handler);
+}
+
+static void
+init_fileopen_hook()
+{
+    /**
+     * Store our current data segment and pointer
+     * to the redirect filename buffer in the
+     * DummyFunctionDataStorage, so we can access
+     * it in situations where we just know CS.
+     **/
+    struct SREGS segs;
+    segread(&segs);
+
+    struct DummyFunctionDataStorage far *dfds =
+        (struct DummyFunctionDataStorage far *)dummy_function_for_data_storage;
+
+    dfds->ds = segs.ds;
+    dfds->original_filename_buf_offset = (short)original_filename_buf;
+    dfds->redirect_filename_buf_offset = (short)redirect_filename_buf;
+
+    //strcpy(original_filename_buf, "GAMECTLG.DAT");
+    //strcpy(redirect_filename_buf, "C:\\GAMECTLG.DAT");
+    strcpy(original_filename_buf, "loonies8.hig");
+    strcpy(redirect_filename_buf, "C:\\LOON8RE.DIR");
+
+    old_int21_handler = _dos_getvect(0x21);
+    _dos_setvect(0x21, hook_int21);
+}
+
+static void
+deinit_fileopen_hook()
+{
+    _dos_setvect(0x21, old_int21_handler);
+}
 
 int main()
 {
     printf("DOS Game Jam Demo Disc START.EXE\n");
     printf("Git rev %s (%s, %s)\n", VERSION, BUILDDATE, BUILDTIME);
+
+    init_fileopen_hook();
 
     int result = 0;
 
@@ -204,6 +333,8 @@ int main()
     if (result != 0) {
         printf("Exiting, result = %d\n", result);
     }
+
+    deinit_fileopen_hook();
 
     return result;
 }
