@@ -1,0 +1,192 @@
+(output of hooker.c)
+
+address of stackvar: 0x04840d9e (value = 0xdeadbeef)
+address of segs: 0x04840488
+address of main: 0x01a20136 -> 0x01a20277
+address of hook_int21: 0x01a200cc -> 0x01a20130
+address of dumpstack: 0x01a20010 -> 0x01a200c6
+ss = 0x0484, ds = 0x0484, cs = 0x01a2
+address of filename ptr: 0x04840da2
+filename ptr value: 0x000001c9
+opening file hello.txt
+address of r: 0x04840d3c -> 0x04840d5a
+file open hook: 'hello.txt' marker @ 0x0d380484
+dumping stack... 4840da2 to 4840d24
+
+...........  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+0x04840d20:  .. .. .. .. ce fa 0d f0 84 04 3c 0d 80 0d c9 01
+0x04840d30:  38 0d c9 01 84 04 26 01
+marker:                              be ba fe ca
+
+r:                                               00 3d 00 3d
+                                                 -ax-- -ax--
+                                     (aka dummy fs/gs entry)
+0x04840d40:  84 04 84 04 80 0d c9 01 68 0d 4c 0d 5e 0d c9 01
+             -es-- -ds-- -di-- -si-- -bp-- -sp-- -bx-- -dx--
+0x04840d50:  00 00 00 3d 2e 20 a2 01 46 72
+             -cx-- -ax-- ^^^^^ -- return ip?
+              ^     ^          ^^^^^ -- return cs?
+              |     |                ^^^^^ -- return flags?
+              |    on _chain_intr: CS of original ISR (for ret)
+             on _chain_intr: IP of original ISR (for ret)
+
+                                           80 0d 08 0a ff ff
+0x04840d60:  00 00 00 00 00 01 84 04 70 0d c9 01 28 03 b5 0b
+0x04840d70:  82 0d 00 00 00 00 01 00 34 04 c9 01 00 01 00 00
+0x04840d80:  00 00 90 0d c9 01 23 02 f6 04 00 00 28 03 00 00
+0x04840d90:  a4 0d af 05 b1 05 a2 01 02 05 cc 00 50 02
+
+marker:                                                ef be
+0x04840da0:  ad de
+
+restoring handler...
+
+
+
+
+Calling an ISR is done using the "INT" instruction, which
+does a "far call" with an additional storing of the CPU flags:
+
+https://c9x.me/x86/html/file_module_x86_id_142.html
+
+When entering an _interrupt routine in Watcom, its prologue
+pushes the following values to the stack (these will be the
+"union INTPACK" parameter it accepts optionally, on the stack):
+
+The original values of ax and cx, dx and bx:
+
+    push            ax
+    push            cx
+    push            dx
+    push            bx
+
+This is just for accessing the sp, it's not restored in _chain_intr
+(as push/pop modifies the 'sp' register anyway):
+
+    push            sp
+
+The original values of these registers:
+
+    push            bp
+    push            si
+    push            di
+    push            ds
+    push            es
+
+And two dummy entries are used for gs / fs:
+
+    push            ax
+    push            ax
+
+At this point, "sp" points to the last ax pushed, and
+as last setup step, "sp" is copied to "bp" to serve as
+the new base pointer.
+
+After that, the ISR code follows. After exiting the ISR
+with _chain_intr, which gets a far pointer to the ISR to
+be chained in ax (offset) and dx (segment), this happens:
+
+See also: https://github.com/open-watcom/open-watcom-v2/blob/master/bld/clib/intel/a/chint086.asm
+
+ 1. offset is moved from ax -> cx (overwriting cx)
+
+    mov     cx,ax                   ; get offset
+
+ 2. segment is moved from dx -> ax (overwriting ax)
+
+    mov     ax,dx                   ; get segment
+
+ 3. reset sp pointer to bp (bp now points to the last
+    ax pushed, i.e. the beginning of the union INTPACK)
+
+    mov     sp,bp ; reset SP to point to saved registers
+
+ 4. cx (offset of chain ISR) is swapped with the "cx"
+    field in the INTPACK union (this does two things,
+    it restores the cx register value, and it puts the
+    offset in the right spot in the stack for a "ret"),
+    the offset of cx in INTPACK is 20 (decimal).
+
+    xchg    cx,20[bp]               ; restore cx, & put in offset
+
+ 5. ax (segment of chain ISR) is swapped with the "ax"
+    field in the INTPACK union (again, this does two
+    things, it restores the ax register value, and it
+    puts the segment in the right spot in the stack for
+    the "ret" later on) -- the offset is 22 (decimal).
+
+    xchg    ax,22[bp]               ; restore ax, & put in segment
+
+ 6. the saved flags from the ISR call (at offset 28
+    decimal in the stack relative to the beginning of
+    the INTPACK) are loaded into bx, AND-ed with 0xFCFF
+    (to clear the IF interrupt enable flag and TF trap
+    flag bits) and then loaded into the flags register
+    using the stack "push bx; popf"
+
+    mov     bx,28[bp]               ; restore flags
+    and     bx,0FCFFh               ; except for IF and TF
+    push    bx                      ; :
+    popf                            ; :
+
+ 7. Now the stack is ready to be torn down, first the
+    two dummy entries for fs and gs are popped into dx
+    (which doesn't matter, dx is overwritten at the end):
+
+    pop     dx                      ; pop off dummy fs entry
+    pop     dx                      ; pop off dummy gs entry
+
+ 8. Then, the saved registers are restored (es to bp):
+
+    pop     es                      ; restore segment registers
+    pop     ds                      ;
+    pop     di                      ; . . .
+    pop     si                      ; . . .
+    pop     bp                      ; . . .
+
+ 9. The saved "sp" register is thrown away, because...
+
+    pop     bx                      ; restore registers
+
+10. ...bx is popped right afterwards, overwriting it again:
+
+    pop     bx                      ; . . .
+
+11. As mentioned, the "dx" pops above are also overwritten
+    with the real saved value of dx:
+
+    pop     dx                      ; . . .
+
+12. After this, what remains on the stack (from the top) is:
+
+    2 bytes: address offset (IP) of chained ISR
+    2 bytes: code segment (CS) of chained ISR
+
+    2 bytes: address offset (IP) of ISR caller
+    2 bytes: code segment (CS) of ISR caller
+    2 bytes: saved CPU flags of ISR caller
+
+13. The _chain_intr function finally gives control to the
+    old ISR by executing a "ret" instruction, which will
+    take the 4 bytes from the stack and jump to it:
+
+    https://c9x.me/x86/html/file_module_x86_id_280.html
+
+14. The chained ISR begins execution with the remaining
+    stack items, pushed by the ISR caller via the INT
+    (call to interrupt procedure) instruction:
+
+    https://c9x.me/x86/html/file_module_x86_id_142.html
+
+    2 bytes: address offset (IP) of ISR caller
+    2 bytes: code segment (CS) of ISR caller
+    2 bytes: saved CPU flags of ISR caller
+
+15. The actual return is done by the ISR using "IRET":
+
+    https://c9x.me/x86/html/file_module_x86_id_145.html
+
+
+So in order to execute code after the chained ISR is
+called, we need to adapt the "_chain_intr" function to
+push a new ISR "call frame" to the stack.
