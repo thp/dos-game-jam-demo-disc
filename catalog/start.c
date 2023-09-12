@@ -272,8 +272,12 @@ init_fileopen_hook()
     dfds->original_filename_buf_offset = (short)original_filename_buf;
     dfds->redirect_filename_buf_offset = (short)redirect_filename_buf;
 
+    // TODO: Retrieve original and redirect file names from game catalog,
+    // and only if we have figured out that we are running from CD-ROM :)
+
     //strcpy(original_filename_buf, "GAMECTLG.DAT");
     //strcpy(redirect_filename_buf, "C:\\GAMECTLG.DAT");
+
     strcpy(original_filename_buf, "loonies8.hig");
     strcpy(redirect_filename_buf, "C:\\LOON8RE.DIR");
 
@@ -292,7 +296,7 @@ int main()
     printf("DOS Game Jam Demo Disc START.EXE\n");
     printf("Git rev %s (%s, %s)\n", VERSION, BUILDDATE, BUILDTIME);
 
-    init_fileopen_hook();
+    //init_fileopen_hook();
 
     int result = 0;
 
@@ -334,7 +338,7 @@ int main()
         printf("Exiting, result = %d\n", result);
     }
 
-    deinit_fileopen_hook();
+    //deinit_fileopen_hook();
 
     return result;
 }

@@ -9,9 +9,51 @@ _TEXT   ends
 _TEXT   segment
 
 _restore_ds_dx proc far
+        public  "C",_restore_ds_dx
+    ; we are almost done -- we just need to restore the original
+    ; DS:DX that we overwrote with our custom filename, and we
+    ; need to transfer the carry flag (used as status bit) from
+    ; the current context (because the DOS ISR assumes "we" are
+    ; the caller, so we see the carry flag, but it hasn't been
+    ; written to the flags stored on the stack for our "iret")
+
+    ; save ax and bp, as we are going to use ax as temporary, and
+    ; bp is used so we can read/write the return flags buried in
+    ; the stack (that will eventually be loaded by "iret"
+    push ax
+    push bp
+    mov bp,sp
+
+    ; offset is 12 bytes from the stack pointer, because:
+    ;  2 bytes bp (pushed above)
+    ;  2 bytes ax (pushed above)
+    ;  2 bytes dx (stored for us)
+    ;  2 bytes ds (stored for us)
+    ;  4 bytes return address far pointer (CS:IP) (for "iret")
+    mov ax,12[bp]
+
+    ; clear the carry flag
+    and ax, 0xFFFEh
+
+    jnc no_carry
+
+    ; set the carry flag
+    or ax, 0x0001h
+
+no_carry:
+    ; store new FLAGS with carry flag from DOS ISR
+    mov 12[bp],ax
+
+    ; restore sp, bp and ax
+    mov sp,bp
+    pop bp
+    pop ax
+
+    ; restore saved ds/dx
     pop dx
     pop ds
-    iret ; return from ISR
+
+    iret ; finally- return from ISR (with the correct carry flag)
 _restore_ds_dx endp
 
 _chain_intr_dsdx     proc far
