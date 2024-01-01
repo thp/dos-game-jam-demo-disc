@@ -27,11 +27,11 @@ struct GameCatalogGame {
     uint16_t flags; /* enum GameCatalogFlags */
 
     /* the following indices are into cat->strings */
-    uint8_t run_idx; /* the "run" command line (path + exe + args) */
+    uint16_t run_idx; /* the "run" command line (path + exe + args) */
+    uint16_t exit_key_idx; /* text description what key to press / how to exit the game */
     uint8_t loader_idx; /* path to loader program that needs to be executed first, or empty string (index 0) */
     uint8_t jam_idx; /* name of the game jam this game was (first) submitted to */
     uint8_t genre_idx; /* genre of the game */
-    uint8_t exit_key_idx; /* text description what key to press / how to exit the game */
     uint8_t type_idx; /* type of game release (e.g. full version, shareware, demo, etc... */
 
     /* the following indices are into cat->string_lists */
@@ -42,8 +42,6 @@ struct GameCatalogGame {
 
     uint8_t num_screenshots; /* number of screenshots (shot0.pcx, ..., shot(num_screenshots-1).pcx) */
     uint8_t prefix_idx; /* prefix where the content is to be found */
-    uint8_t _pad1;
-    uint8_t _pad2;
 };
 
 struct GameCatalogGroup {

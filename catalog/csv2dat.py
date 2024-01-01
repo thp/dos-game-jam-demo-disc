@@ -260,7 +260,7 @@ urls = []
 ids = []
 
 def pack_strings(fp, strings):
-    fp.write(struct.pack('<B', len(strings)))
+    fp.write(struct.pack('<H', len(strings)))
     for string in strings:
         length = len(string.encode('cp850')) + 1
         fp.write(struct.pack('<B', length))
@@ -342,10 +342,11 @@ with open(args.outfile, 'wb') as fp:
 
         kilobytes = game['Kilobytes']
 
-        fp.write(struct.pack('<IHBBBBBBBBBBBBBB', kilobytes, flags,
-                             run_idx, loader_idx, jam_idx, genre_idx, exit_key_idx, type_idx,
+        fp.write(struct.pack('<IHHHBBBBBBBBBB', kilobytes,
+                             flags, run_idx, exit_key_idx,
+                             loader_idx, jam_idx, genre_idx, type_idx,
                              author_list_idx, video_list_idx, sound_list_idx, toolchain_list_idx,
-                             game['NumScreenshots'], prefix_idx, 0, 0))
+                             game['NumScreenshots'], prefix_idx))
 
     pack_strings(fp, names)
     pack_strings(fp, descriptions)

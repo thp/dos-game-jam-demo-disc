@@ -15,10 +15,18 @@ _game_catalog_read_u8(struct GameCatalog *cat)
     return result;
 }
 
+static uint16_t
+_game_catalog_read_u16(struct GameCatalog *cat)
+{
+    uint16_t result = *((uint16_t *)cat->buf_ptr);
+    cat->buf_ptr += 2;
+    return result;
+}
+
 static struct GameCatalogStrings *
 _game_catalog_read_string_list(struct GameCatalog *cat)
 {
-    uint8_t n = _game_catalog_read_u8(cat);
+    uint16_t n = _game_catalog_read_u16(cat);
 
     struct GameCatalogStrings *result = malloc(sizeof(struct GameCatalogStrings) + n * sizeof(const char *));
     result->n = n;
