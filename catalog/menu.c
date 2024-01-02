@@ -202,6 +202,11 @@ void right_shadow(int n)
     int save_attr = screen_attr;
     screen_attr = (0 << 4) | 7;
     for (int i=0; i<n; ++i) {
+        // Do not "textwrap" shadow
+        if (screen_x == 0) {
+            break;
+        }
+
         screen_putch(0xb0);
     }
     screen_attr = save_attr;
