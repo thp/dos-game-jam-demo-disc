@@ -143,24 +143,13 @@ enable_4bit_background()
         case DISPLAY_ADAPTER_CGA:
             {
                 // http://www.techhelpmanual.com/901-color_graphics_adapter_i_o_ports.html
-                // Mirrored by BIOS at 0040:0064, which is also updated first
+                // Mirrored by BIOS at 0040:0065, which is also updated first
                 uint8_t far *mode_select_register = (uint8_t far *)0x00400065ul;
                 *mode_select_register &= ~(1<<5);
                 outp(0x3d8, *mode_select_register);
             }
             break;
         case DISPLAY_ADAPTER_EGA:
-            {
-                // TODO: Is this mirrored by the BIOS?
-                uint8_t tmp = inp(0x03da);
-                outp(0x03c0, 0x10);
-                tmp = inp(0x03c1);
-                tmp &= ~(1<<3);
-                // FIXME: Masking the bit in tmp doesn't work,
-                // so we just set it to zero (tested in DOSBox)
-                outp(0x03c0, 0);
-            }
-            break;
         case DISPLAY_ADAPTER_VGA:
             {
                 union REGS regs;
@@ -169,6 +158,7 @@ enable_4bit_background()
                 regs.h.ah = 0x10;
                 regs.h.al = 0x03;
                 regs.h.bl = 0x00;
+                regs.h.bh = 0x00;
 
                 int86(0x10, &regs, &regs);
             }
