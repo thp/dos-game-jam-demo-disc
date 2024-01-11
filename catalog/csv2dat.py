@@ -20,6 +20,15 @@ games = []
 if not args.verbose:
     print = lambda *args: ...
 
+def translate_toolchain(toolchain):
+    # Group all OpenWatcom entries ("", " 16-bit", " 32-bit")
+    if toolchain.startswith('OpenWatcom'):
+        return 'OpenWatcom'
+    if any(asm in toolchain.lower() for asm in ('nasm', 'fasm', 'tasm')):
+        return 'Assembly'
+
+    return toolchain
+
 with open(args.infile) as fp:
     reader = csv.DictReader(fp)
     for parts in reader:
@@ -37,12 +46,15 @@ with open(args.infile) as fp:
         d['Video'] = tuple(d['Video'].split(', '))
         d['Sound'] = tuple(x for x in d['Sound'].split(', ') if x != '-')
         d['Author'] = tuple(d['Author'].split(', '))
-        d['Toolchain'] = tuple(d['Toolchain'].split(', '))
+        d['Toolchain'] = tuple(translate_toolchain(x) for x in d['Toolchain'].split(', '))
         d['CPU'] = d['Bits'] + '-bit'
         del d['Bits']
         # Normalize paths to forward slash
         d['Run'] = d['Run'].replace('\\', '/')
         d['NumScreenshots'] = int(d['NumScreenshots'])
+
+        if d['Genre'] in ('Tetris', 'Match-3'):
+            d['Genre'] = 'Tetris and Match-3'
 
         if not d['Visible']:
             print('Skip:', d['Name'])
