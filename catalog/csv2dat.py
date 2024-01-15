@@ -109,6 +109,18 @@ def get_string_index(s):
         strings.append(s)
     return strings.index(s)
 
+PREFIX_STRINGS = {
+    'GAME': 'DEMO2023/',
+    'TOOL': 'EXTRAS/',
+    'DRV': 'EXTRAS/',
+    'SDK': 'SDKS/',
+}
+
+# Place all prefixes early in the string list,
+# so the prefix_idx always fits into an 8-bit value
+for value in PREFIX_STRINGS.values():
+    get_string_index(value)
+
 def make_group(title, children, subgroups):
     return {'title': get_string_index(title), 'children': children, 'subgroups': subgroups}
 
@@ -260,13 +272,6 @@ FLAG_REQUIRES_VGA = (1 << 9)
 FLAG_REQUIRES_VESA = (1 << 10)
 FLAG_DOSBOX_INCOMPATIBLE = (1 << 11)
 
-PREFIX_STRINGS = {
-    'GAME': 'DEMO2023/',
-    'TOOL': 'EXTRAS/',
-    'DRV': 'EXTRAS/',
-    'SDK': 'SDKS/',
-}
-
 names = []
 descriptions = []
 urls = []
@@ -355,11 +360,22 @@ with open(args.outfile, 'wb') as fp:
 
         kilobytes = game['Kilobytes']
 
-        fp.write(struct.pack('<IHHHBBBBBBBBBB', kilobytes,
-                             flags, run_idx, exit_key_idx,
-                             loader_idx, jam_idx, genre_idx, type_idx,
+        fp.write(struct.pack('<IHHHHHHHBBBBBB',
+                             # 32-bit file size, in kilobytes
+                             kilobytes,
+
+                             # 16-bit flags and string index values
+                             flags,
+                             run_idx, exit_key_idx, genre_idx, loader_idx, jam_idx, type_idx,
+
+                             # 8-bit string index values
+                             prefix_idx,
+
+                             # 8-bit string list index values
                              author_list_idx, video_list_idx, sound_list_idx, toolchain_list_idx,
-                             game['NumScreenshots'], prefix_idx))
+
+                             # 8-bit number of screenshots
+                             game['NumScreenshots']))
 
     pack_strings(fp, names)
     pack_strings(fp, descriptions)

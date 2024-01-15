@@ -29,10 +29,11 @@ struct GameCatalogGame {
     /* the following indices are into cat->strings */
     uint16_t run_idx; /* the "run" command line (path + exe + args) */
     uint16_t exit_key_idx; /* text description what key to press / how to exit the game */
-    uint8_t loader_idx; /* path to loader program that needs to be executed first, or empty string (index 0) */
-    uint8_t jam_idx; /* name of the game jam this game was (first) submitted to */
-    uint8_t genre_idx; /* genre of the game */
-    uint8_t type_idx; /* type of game release (e.g. full version, shareware, demo, etc... */
+    uint16_t genre_idx; /* genre of the game */
+    uint16_t loader_idx; /* path to loader program that needs to be executed first, or empty string (index 0) */
+    uint16_t jam_idx; /* name of the game jam this game was (first) submitted to */
+    uint16_t type_idx; /* type of game release (e.g. full version, shareware, demo, etc... */
+    uint8_t prefix_idx; /* prefix where the content is to be found */
 
     /* the following indices are into cat->string_lists */
     uint8_t author_list_idx; /* list of game authors, artists, collaborators, etc.. */
@@ -41,7 +42,6 @@ struct GameCatalogGame {
     uint8_t toolchain_list_idx; /* list of used toolchains/sdks/libraries (e.g. DJGPP, ...) */
 
     uint8_t num_screenshots; /* number of screenshots (shot0.pcx, ..., shot(num_screenshots-1).pcx) */
-    uint8_t prefix_idx; /* prefix where the content is to be found */
 };
 
 struct GameCatalogGroup {
