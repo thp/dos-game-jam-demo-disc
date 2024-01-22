@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <strings.h>
 
 #include <dos.h>
 #include <time.h>
@@ -14,7 +16,10 @@
 #define KEY_END (0x100 | 79)
 #define KEY_F2 (0x100 | 60)
 #define KEY_F3 (0x100 | 61)
-#define ENTERKEY (13)
+#define KEY_F4 (0x100 | 62)
+#define KEY_ENTER (13)
+#define KEY_ESCAPE (27)
+#define KEY_BACKSPACE (8)
 
 #include "gamectlg.h"
 #include "ipc.h"
@@ -180,6 +185,27 @@ print_parents_first(char *buf, struct GameCatalog *cat, struct GameCatalogGroup 
     strcat(buf, cat->strings->d[group->title_idx]);
 }
 
+struct SearchState {
+    int now_searching;
+    char search_str[30];
+    int search_pos;
+    int previous_input;
+    int saved_cursor;
+    int saved_offset;
+};
+
+void reset_search_state(struct SearchState *state)
+{
+    state->now_searching = 0;
+    for (int i=0; i<sizeof(state->search_str); ++i) {
+        state->search_str[i] = 0;
+    }
+    state->search_pos = 0;
+    state->previous_input = 0;
+    state->saved_cursor = 0;
+    state->saved_offset = 0;
+}
+
 struct ChoiceDialogState {
     struct GameCatalog *cat;
     struct GameCatalogGroup *here;
@@ -187,6 +213,8 @@ struct ChoiceDialogState {
 
     int cursor;
     int offset;
+
+    struct SearchState search;
 };
 
 void any_border(int fg, int bg)
@@ -224,6 +252,71 @@ void left_border(int fg, int bg)
     any_border(fg, bg);
 }
 
+struct HotKey {
+    uint8_t only_vga;
+    const char *key;
+    const char *func;
+};
+
+void draw_statusbar(const char *search_string)
+{
+    for (int i=0; i<SCREEN_WIDTH; ++i) {
+        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][0] = ' ';
+        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][1] =
+            (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_BG;
+    }
+
+    int save = screen_attr;
+    screen_y = SCREEN_HEIGHT - 1;
+    screen_x = 2;
+
+    static const struct HotKey
+    KEYS[] = {
+        { 0, "ESC", "Back" },
+        { 0, "F2", "Color Theme" },
+        { 0, "F3", "Search" },
+        { 1, "F4", "Screenshots" },
+        { 0, "Enter", "Go" },
+        { 0, "Arrows", "Move" },
+        { 0, NULL, NULL },
+    };
+
+    static const struct HotKey
+    SEARCH_KEYS[] = {
+        { 0, "Up", "Previous" },
+        { 0, "Down", "Next" },
+        { 0, "Enter", "Done" },
+        { 0, NULL, NULL },
+    };
+
+    const struct HotKey *keys = search_string ? SEARCH_KEYS : KEYS;
+
+    for (int i=0; keys[i].key != NULL; ++i) {
+        if (keys[i].only_vga && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+            continue;
+        }
+
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
+        screen_print(keys[i].key);
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
+        screen_print(" ");
+        screen_print(keys[i].func);
+
+        screen_print("  ");
+    }
+
+    if (search_string != NULL) {
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
+        screen_print("Search: ");
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
+        screen_print(search_string);
+        enable_blinking_cursor(screen_x, screen_y);
+        screen_print("  ");
+    }
+
+    screen_attr = save;
+}
+
 static void
 render_background(const char *title)
 {
@@ -240,10 +333,6 @@ render_background(const char *title)
     for (int i=0; i<SCREEN_WIDTH; ++i) {
         SCREEN_BUFFER[i][0] = ' ';
         SCREEN_BUFFER[i][1] = (COLOR_FRAME_LABEL_BG << 4) | COLOR_FRAME_LABEL_FG;
-
-        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][0] = ' ';
-        SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][1] =
-            (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_BG;
     }
 
     if (*title) {
@@ -258,35 +347,9 @@ render_background(const char *title)
         screen_attr = save;
     }
 
-    screen_y = SCREEN_HEIGHT - 1;
-    screen_x = 2;
+    draw_statusbar(NULL);
+
     int save = screen_attr;
-
-    static const struct {
-        uint8_t only_vga;
-        const char *key;
-        const char *func;
-    } KEYS[] = {
-        { 0, "ESC", "Back" },
-        { 0, "F2", "Color Theme" },
-        { 1, "F3", "Screenshots" },
-        { 0, "Enter", "Go" },
-        { 0, "Arrows", "Move" },
-    };
-
-    for (int i=0; i<sizeof(KEYS)/sizeof(KEYS[0]); ++i) {
-        if (KEYS[i].only_vga && display_adapter_type != DISPLAY_ADAPTER_VGA) {
-            continue;
-        }
-
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
-        screen_print(KEYS[i].key);
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
-        screen_print(" ");
-        screen_print(KEYS[i].func);
-
-        screen_print("  ");
-    }
 
     if (ipc_buffer) {
         const char *strings[4];
@@ -760,6 +823,157 @@ store_color_palette()
     }
 }
 
+/**
+ * strcasestr() from musl libc
+ *
+ * Copyright © 2005-2012 Rich Felker
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ **/
+char *
+strcasestr(const char *h, const char *n)
+{
+    size_t l = strlen(n);
+    for (; *h; h++) if (!strncasecmp(h, n, l)) return (char *)h;
+    return 0;
+}
+
+static int
+match_game(const struct GameCatalog *cat, int game_idx, struct SearchState *search)
+{
+    const char *name = cat->names->d[game_idx];
+    return (strcasestr(name, search->search_str) != NULL);
+}
+
+static int
+match_subgroup(const struct GameCatalog *cat, int title_idx, struct SearchState *search)
+{
+    const char *name = cat->strings->d[title_idx];
+    return (strcasestr(name, search->search_str) != NULL);
+}
+
+
+static void
+search_forward_wrap_around(struct ChoiceDialogState *state)
+{
+    if (state->here->num_children) {
+        // start searching current or forward (with wrapping)
+        for (int i=state->cursor - 1; i<state->here->num_children; ++i) {
+            int game_idx = state->here->children[i];
+            if (match_game(state->cat, game_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+
+        // wrap around search
+        for (int i=0; i<state->cursor - 1; ++i) {
+            int game_idx = state->here->children[i];
+            if (match_game(state->cat, game_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    } else {
+        // group search
+
+        // start searching current or forward (with wrapping)
+        for (int i=state->cursor - 1; i<state->here->num_subgroups; ++i) {
+            int title_idx = state->here->subgroups[i]->title_idx;
+            if (match_subgroup(state->cat, title_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+
+        // wrap around search
+        for (int i=0; i<state->cursor - 1; ++i) {
+            int title_idx = state->here->subgroups[i]->title_idx;
+            if (match_subgroup(state->cat, title_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    }
+}
+
+static void
+search_next(struct ChoiceDialogState *state)
+{
+    if (state->here->num_children) {
+        // search for next without exiting search
+        for (int i=state->cursor - 1 + 1; i<state->here->num_children; ++i) {
+            int game_idx = state->here->children[i];
+            if (match_game(state->cat, game_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    } else {
+        // group search
+
+        // search for next without exiting search
+        for (int i=state->cursor - 1 + 1; i<state->here->num_subgroups; ++i) {
+            int title_idx = state->here->subgroups[i]->title_idx;
+            if (match_subgroup(state->cat, title_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    }
+}
+
+static void
+search_previous(struct ChoiceDialogState *state)
+{
+    if (state->here->num_children) {
+        // search for previous without exiting search
+        for (int i=state->cursor - 1 - 1; i>= 0; --i) {
+            int game_idx = state->here->children[i];
+            if (match_game(state->cat, game_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    } else {
+        // group search
+
+        // search for previous without exiting search
+        for (int i=state->cursor - 1 - 1; i>= 0; --i) {
+            int title_idx = state->here->subgroups[i]->title_idx;
+            if (match_subgroup(state->cat, title_idx, &state->search)) {
+                /* + 1 because of ".." navigation */
+                state->cursor = i + 1;
+                return;
+            }
+        }
+    }
+}
+
 static int
 choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 {
@@ -777,6 +991,53 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     int ch = getch();
     if (ch == 0) {
         ch = 0x100 | getch();
+    }
+
+    if (state->search.now_searching) {
+        if (ch == KEY_DOWN) {
+            search_next(state);
+        } else if (ch == KEY_UP) {
+            search_previous(state);
+        } else if (ch == KEY_ENTER || ch == KEY_ESCAPE || ch == KEY_F3) {
+            if (ch == KEY_ESCAPE) {
+                // restore previous cursor and abort search
+                state->cursor = state->search.saved_cursor;
+                state->offset = state->search.saved_offset;
+                state->search.search_str[0] = '\0';
+                state->search.search_pos = 0;
+            } else {
+                // allow searching again
+                state->search.previous_input = 1;
+            }
+            state->search.now_searching = 0;
+            disable_blinking_cursor();
+            return 0;
+        } else if (state->search.search_pos > 0 && ch == KEY_BACKSPACE) {
+            state->search.previous_input = 0;
+            state->search.search_str[--state->search.search_pos] = '\0';
+
+            // reset cursor and restart search
+            state->cursor = state->search.saved_cursor;
+            state->offset = state->search.saved_offset;
+
+            search_forward_wrap_around(state);
+        } else if (state->search.search_pos < sizeof(state->search.search_str) - 1 &&
+                    ((ch >= 'a' && ch <= 'z') ||
+                     (ch >= 'A' && ch <= 'Z') ||
+                     (ch >= '0' && ch <= '9'))) {
+            if (state->search.previous_input) {
+                state->search.search_pos = 0;
+                state->search.search_str[0] = '\0';
+                state->search.previous_input = 0;
+            }
+
+            state->search.search_str[state->search.search_pos++] = ch;
+            state->search.search_str[state->search.search_pos] = '\0';
+
+            search_forward_wrap_around(state);
+        }
+
+        return 0;
     }
 
     if (ch == KEY_NPAGE) {
@@ -803,7 +1064,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         if (state->cursor > 0) {
             state->cursor -= 1;
         }
-    } else if (ch == ENTERKEY) {
+    } else if (ch == KEY_ENTER) {
         return 1;
     } else if (ch == KEY_F2) {
         if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
@@ -828,7 +1089,13 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
                 update_palette();
             }
         }
-    } else if (ch == KEY_F3 && display_adapter_type == DISPLAY_ADAPTER_VGA) {
+    } else if (ch == KEY_F3 || ch == '/') {
+        if (!state->search.now_searching) {
+            state->search.now_searching = 1;
+            state->search.saved_cursor = state->cursor;
+            state->search.saved_offset = state->offset;
+        }
+    } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VGA) {
         if (state->game != -1) {
             // on a game page
             show_screenshots(state->cat, state->game);
@@ -836,7 +1103,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             // in a choice screen with a games list
             show_screenshots(state->cat, state->here->children[state->cursor-1]);
         }
-    } else if (ch == 27) {
+    } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;
         return 1;
     }
@@ -879,6 +1146,10 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
                 get_text_func, get_text_func_user_data,
                 get_label_func, get_label_func_user_data,
                 frame_label, width, 1);
+
+        if (state->search.now_searching) {
+            draw_statusbar(state->search.search_str);
+        }
 
         present();
 
@@ -1095,6 +1366,7 @@ render_group_background(void *user_data)
     int max = (ud->here->num_children ? ud->here->num_children : ud->here->num_subgroups);
 
     struct ChoiceDialogState cds;
+    reset_search_state(&cds.search);
     cds.cat = ud->cat;
     cds.here = ud->here;
     cds.game = -1;
@@ -1311,8 +1583,8 @@ show_screenshots(struct GameCatalog *cat, int game)
             if (current_idx > 0) {
                 --current_idx;
             }
-        } else if (ch == 27 || ch == KEY_F3) {
-            // F3 toggles screenshots on and off
+        } else if (ch == KEY_ESCAPE || ch == KEY_F4) {
+            // F4 toggles screenshots on and off
             // ESC to get out of screenshot mode
             break;
         }
@@ -1461,6 +1733,7 @@ int main(int argc, char *argv[])
             brud.width = 0;
 
             struct ChoiceDialogState cds;
+            reset_search_state(&cds.search);
             cds.cat = cat;
             cds.here = here;
             cds.game = game;
@@ -1511,6 +1784,7 @@ int main(int argc, char *argv[])
             glgud.group = here;
             int max = (here->num_children ? here->num_children : here->num_subgroups);
             struct ChoiceDialogState cds;
+            reset_search_state(&cds.search);
             cds.cat = cat;
             cds.here = here;
             cds.game = game;

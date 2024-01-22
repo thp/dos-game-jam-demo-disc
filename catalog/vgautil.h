@@ -127,6 +127,23 @@ textmode_reset()
 }
 
 static void
+enable_blinking_cursor(int x, int y)
+{
+    union REGS inregs, outregs;
+    inregs.h.ah = 1;
+    inregs.h.ch = 0;
+    inregs.h.cl = 15;
+
+    int86(0x10, &inregs, &outregs);
+
+    inregs.h.ah = 2;
+    inregs.h.bh = 0;
+    inregs.h.dh = y;
+    inregs.h.dl = x;
+    int86(0x10, &inregs, &outregs);
+}
+
+static void
 disable_blinking_cursor()
 {
     union REGS inregs, outregs;
