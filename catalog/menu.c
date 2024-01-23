@@ -1090,7 +1090,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             }
         }
     } else if (ch == KEY_F3 || ch == '/') {
-        if (!state->search.now_searching) {
+        if (state->game == -1 && !state->search.now_searching) {
             state->search.now_searching = 1;
             state->search.saved_cursor = state->cursor;
             state->search.saved_offset = state->offset;
