@@ -76,19 +76,19 @@ int rungame()
     segread(&segs);
 
     char *dir = buffer;
-    char *file = buffer;
-    char *here = strrchr(dir, '/');
-    if (here != NULL) {
-        *here = '\0';
-        file = here + 1;
-    }
-
-    char *args = strchr(file, ' ');
+    char *args = strchr(dir, ' ');
     if (args != NULL) {
         *args = '\0';
         ++args;
     } else {
         args = "";
+    }
+
+    char *file = buffer;
+    char *here = strrchr(dir, '/');
+    if (here != NULL) {
+        *here = '\0';
+        file = here + 1;
     }
 
     char oldCwd[64];
