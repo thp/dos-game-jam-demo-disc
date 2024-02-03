@@ -145,6 +145,7 @@ JAMS_ORDERING = [
 VIDEO_ORDERING = [
     'Text',
     'CGA',
+    'Hercules',
     'Tandy',
     'EGA',
     'VGA',
