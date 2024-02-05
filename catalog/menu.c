@@ -8,6 +8,8 @@
 #include <time.h>
 
 #include <conio.h>
+#define KEY_LEFT (0x100 | 75)
+#define KEY_RIGHT (0x100 | 77)
 #define KEY_DOWN (0x100 | 80)
 #define KEY_UP (0x100 | 72)
 #define KEY_NPAGE (0x100 | 81)
@@ -26,6 +28,8 @@
 #include "vgautil.h"
 #include "cpuutil.h"
 #include "emuutil.h"
+
+#include "vgafont.h"
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
@@ -61,16 +65,20 @@ have_mouse_driver()
 }
 
 static void
-show_screenshots(struct GameCatalog *cat, int game);
+show_screenshots(struct GameCatalog *cat, int game, int screenshot_idx);
 
 static void
 configure_text_mode();
 
 #define SCREEN_WIDTH (80)
-#define SCREEN_HEIGHT (25)
+#if defined(VGAMENU)
+#  define SCREEN_HEIGHT (33)
+#else
+#  define SCREEN_HEIGHT (25)
+#endif
 
 static uint8_t
-SCREEN_BUFFER[80*25][2];
+SCREEN_BUFFER[SCREEN_WIDTH*SCREEN_HEIGHT][2];
 
 static uint8_t
 screen_x = 0;
@@ -103,7 +111,11 @@ static uint8_t
 
     // frame label
     COLOR_FRAME_LABEL_BG = 0,
+#if defined(VGAMENU)
+    COLOR_FRAME_LABEL_FG = 3 + 8,
+#else
     COLOR_FRAME_LABEL_FG = 0xf,
+#endif
 
     // hotkey bar
     COLOR_HOTKEY_BG = 0,
@@ -132,7 +144,11 @@ static uint8_t
 screen_attr = 7;
 
 static int32_t
+#if defined(VGAMENU)
+brightness = 255;
+#else
 brightness = 0;
+#endif
 
 static int
 brightness_up_down = 1;
@@ -213,6 +229,7 @@ struct ChoiceDialogState {
 
     int cursor;
     int offset;
+    int screenshot_idx;
 
     struct SearchState search;
 };
@@ -273,9 +290,14 @@ void draw_statusbar(const char *search_string)
     static const struct HotKey
     KEYS[] = {
         { 0, "ESC", "Back" },
+#if !defined(VGAMENU)
         { 0, "F2", "Color Theme" },
+#endif
         { 0, "F3", "Search" },
-        { 1, "F4", "Screenshots" },
+#if defined(VGAMENU)
+        { 1, "F4", "Hide UI" },
+        { 1, "L/R", "Screenshots" },
+#endif
         { 0, "Enter", "Go" },
         { 0, "Arrows", "Move" },
         { 0, NULL, NULL },
@@ -710,8 +732,60 @@ present()
 
     update_palette();
 
+#if defined(VGAMENU)
+    unsigned char __far *vga = (unsigned char __far *)(0xa0000000L);
+    for (int x=0; x<320; ++x) {
+        vga[x] += 64;
+        vga[320*199+x] += 64;
+    }
+    for (int y=0; y<SCREEN_HEIGHT; ++y) {
+        for (int x=0; x<SCREEN_WIDTH; ++x) {
+            unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
+            if (ch == 0xb2) {
+                continue;
+            }
+
+            unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
+
+            unsigned char colors[2];
+                colors[0]=(attr >> 4) & 0x0F;
+                colors[1]=(attr >> 0) & 0x0F;
+
+            unsigned char rows[6];
+                rows[0]=(VGAFONT[ch*3+0] >> 0) & 0x0F;
+                rows[1]=(VGAFONT[ch*3+0] >> 4) & 0x0F;
+                rows[2]=(VGAFONT[ch*3+1] >> 0) & 0x0F;
+                rows[3]=(VGAFONT[ch*3+1] >> 4) & 0x0F;
+                rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
+                rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
+
+            for (int row=0; row<6; ++row) {
+                for (int column=0; column<4; ++column) {
+                    int yy = (1+y*6+row);
+                    int xx = x*4+column;
+
+                    unsigned char color = (rows[row] >> (3-column)) & 1;
+
+                    if (ch == 0xb0) {
+                        if ((xx ^ yy) & 1) {
+                            continue;
+                        }
+                        color = 0;
+                    }
+
+                    if (color == 0) {
+                        vga[yy*320+xx] += 64;
+                    } else {
+                        vga[yy*320 + xx] = colors[color];
+                    }
+                }
+            }
+        }
+    }
+#else
     short __far *screen = (short __far *)(0xb8000000L);
     _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
+#endif
 }
 
 static int
@@ -773,6 +847,37 @@ choice_dialog_measure(int n,
 static void
 generate_random_palette()
 {
+#if defined(VGAMENU)
+    // first, generate background/disabled colors
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + 0;
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + 20;
+    DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + 80;
+
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
+    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
+
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
+    DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
+
+    // then, generate a sane sub-palette
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 150;
+
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = 250;
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = 250;
+    DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = 250;
+
+    DEFAULT_PALETTE[COLOR_DARK_BG].r = 230;
+    DEFAULT_PALETTE[COLOR_DARK_BG].g = 230;
+    DEFAULT_PALETTE[COLOR_DARK_BG].b = 230;
+
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = 150;
+    DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = 150;
+#else
     // first, generate background/disabled colors
     DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + rand() % 200;
     DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + rand() % 200;
@@ -808,6 +913,7 @@ generate_random_palette()
 
 #undef BRIGHTER
 #undef DARKER
+#endif
 }
 
 static void
@@ -996,8 +1102,10 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     if (state->search.now_searching) {
         if (ch == KEY_DOWN) {
             search_next(state);
+            state->screenshot_idx = 0;
         } else if (ch == KEY_UP) {
             search_previous(state);
+            state->screenshot_idx = 0;
         } else if (ch == KEY_ENTER || ch == KEY_ESCAPE || ch == KEY_F3) {
             if (ch == KEY_ESCAPE) {
                 // restore previous cursor and abort search
@@ -1046,27 +1154,40 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         } else {
             state->cursor += page_size;
         }
+        state->screenshot_idx = 0;
     } else if (ch == KEY_PPAGE) {
         if (state->cursor < page_size) {
             state->cursor = 0;
         } else {
             state->cursor -= page_size;
         }
+        state->screenshot_idx = 0;
     } else if (ch == KEY_HOME) {
         state->cursor = 0;
+        state->screenshot_idx = 0;
     } else if (ch == KEY_END) {
         state->cursor = n - 1;
+        state->screenshot_idx = 0;
     } else if (ch == KEY_DOWN) {
         if (state->cursor < n - 1) {
+            state->screenshot_idx = 0;
             state->cursor += 1;
         }
+    } else if (ch == KEY_LEFT) {
+        if (state->screenshot_idx > 0) {
+            state->screenshot_idx -= 1;
+        }
+    } else if (ch == KEY_RIGHT) {
+        state->screenshot_idx++;
     } else if (ch == KEY_UP) {
         if (state->cursor > 0) {
             state->cursor -= 1;
+            state->screenshot_idx = 0;
         }
     } else if (ch == KEY_ENTER) {
         return 1;
     } else if (ch == KEY_F2) {
+#if !defined(VGAMENU)
         if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
             COLOR_DEFAULT_BG = 1 + (rand()%6);
             do {
@@ -1089,6 +1210,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
                 update_palette();
             }
         }
+#endif
     } else if (ch == KEY_F3 || ch == '/') {
         if (state->game == -1 && !state->search.now_searching) {
             state->search.now_searching = 1;
@@ -1096,15 +1218,39 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.saved_offset = state->offset;
         }
     } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VGA) {
-        if (state->game != -1) {
-            // on a game page
-            show_screenshots(state->cat, state->game);
-        } else if (state->here && state->here->num_children && state->cursor > 0) {
-            // in a choice screen with a games list
-            show_screenshots(state->cat, state->here->children[state->cursor-1]);
+#if defined(VGAMENU)
+        while (1) {
+            if (state->game != -1) {
+                // on a game page
+                show_screenshots(state->cat, state->game, state->screenshot_idx);
+            } else if (state->here && state->here->num_children && state->cursor > 0) {
+                // in a choice screen with a games list
+                show_screenshots(state->cat, state->here->children[state->cursor-1], state->screenshot_idx);
+            } else {
+                show_screenshots(state->cat, -1, state->screenshot_idx);
+            }
+
+            int ch = getch();
+            if (ch == 0) {
+                ch = 0x100 | getch();
+            }
+
+            if (ch == KEY_ESCAPE || ch == KEY_F4) {
+                // F4 toggles screenshots on and off
+                // ESC to get out of screenshot mode
+                break;
+            } else if (ch == KEY_LEFT) {
+                if (state->screenshot_idx > 0) {
+                    state->screenshot_idx -= 1;
+                }
+            } else if (ch == KEY_RIGHT) {
+                state->screenshot_idx++;
+            }
         }
+#endif
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;
+        state->screenshot_idx = 0;
         return 1;
     }
 
@@ -1124,12 +1270,20 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             get_label_func, get_label_func_user_data,
             frame_label, &height);
 
+#if defined(VGAMENU)
+    if (height > 19) {
+        height = 19;
+    }
+
+    y = (SCREEN_HEIGHT - height - 3);
+#else
     if (y == -1) {
         y = 5;
         if (y + height > 20) {
             y = (SCREEN_HEIGHT - height - 1) / 2;
         }
     }
+#endif
 
     if (x == -1) {
         x = (SCREEN_WIDTH - width) / 2;
@@ -1141,6 +1295,20 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
         if (render_background_func) {
             render_background_func(render_background_func_user_data);
         }
+
+#if defined(VGAMENU)
+        // FIXME: Flickering fix (double buffering)
+        if (state->game != -1) {
+            // on a game page
+            show_screenshots(state->cat, state->game, state->screenshot_idx);
+        } else if (state->here && state->here->num_children && state->cursor > 0) {
+            // in a choice screen with a games list
+            show_screenshots(state->cat, state->here->children[state->cursor-1], state->screenshot_idx);
+        } else {
+            // default
+            show_screenshots(state->cat, -1, state->screenshot_idx);
+        }
+#endif
 
         choice_dialog_render(x, y, state, n,
                 get_text_func, get_text_func_user_data,
@@ -1372,6 +1540,7 @@ render_group_background(void *user_data)
     cds.game = -1;
     cds.cursor = ud->here->cursor_index;
     cds.offset = ud->here->scroll_offset;
+    cds.screenshot_idx = 0;
 
     const char *frame_label = ud->cat->strings->d[ud->here->title_idx];
 
@@ -1410,10 +1579,12 @@ ipc_buffer_pop_menu_trail_entry(void)
 static void
 fade_out()
 {
+#if !defined(VGAMENU)
     brightness_up_down = -1;
     while (brightness) {
         present();
     }
+#endif
 }
 
 static void
@@ -1489,8 +1660,9 @@ vga_present_pcx(const char *filename)
             int len = 0;
             int pos = 0;
 
-            for (int i=0; i<256; ++i) {
-                vga_set_palette_entry_direct(i, 0, 0, 0);
+            for (int i=0; i<64; ++i) {
+                vga_set_palette_entry_direct(i+16, 0, 0, 0);
+                vga_set_palette_entry_direct(i+16+64, 0, 0, 0);
             }
 
             while (pixels_processed < (long)width * (long)height) {
@@ -1510,21 +1682,27 @@ vga_present_pcx(const char *filename)
                     ch = chunk[pos++];
 
                     for (int i=0; i<repeat; ++i) {
-                        VGA[pixels_processed++] = ch;
+                        VGA[pixels_processed++] = ch + 16;
                     }
                 } else {
-                    VGA[pixels_processed++] = ch;
+                    VGA[pixels_processed++] = ch + 16;
                 }
             }
 
             fseek(fp, -(768 + 1), SEEK_END);
             int ch = fgetc(fp);
             if (ch == 12) {
-                for (int i=0; i<256; ++i) {
+                for (int i=0; i<64; ++i) {
                     int r = fgetc(fp);
                     int g = fgetc(fp);
                     int b = fgetc(fp);
-                    vga_set_palette_entry_direct(i, r, g, b);
+                    vga_set_palette_entry_direct(i+16, r, g, b);
+
+                    r /= 10;
+                    g /= 10; g += 20;
+                    b /= 10; b += 30;
+
+                    vga_set_palette_entry_direct(i+16+64, r, g, b);
                 }
             } else {
                 // TODO: Error message (no palette)
@@ -1535,64 +1713,26 @@ vga_present_pcx(const char *filename)
 
         fclose(fp);
     } else {
-        printf("Cannot open %s\n", filename);
-        printf("Press ESC to go back to menu.\n");
+        //printf("Cannot open %s\n", filename);
+        //printf("Press ESC to go back to menu.\n");
     }
 }
 
 static void
-show_screenshots(struct GameCatalog *cat, int game)
+show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 {
-    if (cat->games[game].num_screenshots == 0) {
-        return;
+    const char *game_name = "default";
+
+    if (game != -1 && cat->games[game].num_screenshots > 0) {
+        game_name = cat->ids->d[game];
+        current_idx %= cat->games[game].num_screenshots;
+    } else {
+        current_idx %= 2; // FIXME: Hardcoded
     }
 
-    fade_out();
-
-    int last_idx = -1;
-    int current_idx = 0;
-
-    // switch to mode 0x13
-    {
-        union REGS inregs, outregs;
-        inregs.h.ah = 0;
-        inregs.h.al = 0x13;
-
-        int86(0x10, &inregs, &outregs);
-    }
-
-    while (1) {
-        char filename[128];
-        sprintf(filename, "pcx/%s/shot%d.pcx", cat->ids->d[game], current_idx);
-
-        if (current_idx != last_idx) {
-            vga_present_pcx(filename);
-            last_idx = current_idx;
-        }
-
-        int ch = getch();
-        if (ch == 0) {
-            ch = 0x100 | getch();
-        }
-
-        if (ch == KEY_DOWN) {
-            if (current_idx < cat->games[game].num_screenshots - 1) {
-                ++current_idx;
-            }
-        } else if (ch == KEY_UP) {
-            if (current_idx > 0) {
-                --current_idx;
-            }
-        } else if (ch == KEY_ESCAPE || ch == KEY_F4) {
-            // F4 toggles screenshots on and off
-            // ESC to get out of screenshot mode
-            break;
-        }
-    }
-
-    // .. and back to the menu
-    textmode_reset();
-    configure_text_mode();
+    char filename[128];
+    sprintf(filename, "pcx/%s/shot%d.pcx", game_name, current_idx);
+    vga_present_pcx(filename);
 }
 
 int main(int argc, char *argv[])
@@ -1610,6 +1750,9 @@ int main(int argc, char *argv[])
     emulator_type = detect_dos_emulator();
     mouse_available = have_mouse_driver();
 
+#if defined(VGAMENU)
+    set_palette_entry = vga_set_palette_entry_direct;
+#else
     switch (display_adapter_type) {
         case DISPLAY_ADAPTER_CGA:
             set_palette_entry = NULL;
@@ -1621,6 +1764,7 @@ int main(int argc, char *argv[])
             set_palette_entry = vga_set_palette_entry;
             break;
     }
+#endif
 
     if (argc == 2) {
         static struct {
@@ -1655,7 +1799,11 @@ int main(int argc, char *argv[])
     }
 
     if (!ipc_buffer) {
+#if defined(VGAMENU)
+        printf("Use VGASTART.EXE to start the menu.\n");
+#else
         printf("Use START.EXE to start the menu.\n");
+#endif
         return 1;
     }
 
@@ -1682,7 +1830,17 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+#if defined(VGAMENU)
+    {
+        union REGS inregs, outregs;
+        inregs.h.ah = 0;
+        inregs.h.al = 0x13;
+
+        int86(0x10, &inregs, &outregs);
+    }
+#else
     configure_text_mode();
+#endif
 
     // cat takes ownership of "buf"
     struct GameCatalog *cat = game_catalog_parse(buf, len);
@@ -1739,6 +1897,7 @@ int main(int argc, char *argv[])
             cds.game = game;
             cds.cursor = 0;
             cds.offset = 0;
+            cds.screenshot_idx = 0;
 
             int num_choices = 2;
             if (get_excuse(&(cat->games[game])) != NULL) {
@@ -1749,7 +1908,11 @@ int main(int argc, char *argv[])
             int selection = choice_dialog(-1, -1, buf, &cds, num_choices,
                     get_text_game, &gtgud,
                     get_label_game, NULL,
+#if defined(VGAMENU)
+                    NULL, NULL,
+#else
                     render_group_background, &brud,
+#endif
                     cat->names->d[game]);
 
             if (selection == 0) {
@@ -1790,12 +1953,21 @@ int main(int argc, char *argv[])
             cds.game = game;
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
+            cds.screenshot_idx = 0;
 
+#if defined(VGAMENU)
+            int selection = choice_dialog(2, 20, buf, &cds, max + 1,
+                    NULL, NULL,
+                    get_label_group, &glgud,
+                    NULL, NULL,
+                    cat->strings->d[here->title_idx]);
+#else
             int selection = choice_dialog(2, 3, buf, &cds, max + 1,
                     NULL, NULL,
                     get_label_group, &glgud,
                     NULL, NULL,
                     cat->strings->d[here->title_idx]);
+#endif
             here->cursor_index = cds.cursor;
             here->scroll_offset = cds.offset;
 

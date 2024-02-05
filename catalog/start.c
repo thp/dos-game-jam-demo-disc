@@ -158,7 +158,11 @@ int runmenu()
     *dest++ = '\0';
 
     printf("Launching menu...\n");
+#if defined(VGAMENU)
+    return (run_command("vgamenu.exe", args) == 0);
+#else
     return (run_command("menu.exe", args) == 0);
+#endif
 }
 
 static void _interrupt _far
@@ -293,7 +297,11 @@ deinit_fileopen_hook()
 
 int main()
 {
+#if defined(VGAMENU)
+    printf("DOS Game Jam Demo Disc VGASTART.EXE\n");
+#else
     printf("DOS Game Jam Demo Disc START.EXE\n");
+#endif
     printf("Git rev %s (%s, %s)\n", VERSION, BUILDDATE, BUILDTIME);
 
     //init_fileopen_hook();
