@@ -23,7 +23,7 @@ detect_dos_emulator(void)
     // at address 0x000FE000, the string we use begins at
     // 0x000FE060 + 1 byte, which is FE06:0001 (seg:off)
     // See also: https://wiki.osdev.org/Memory_Map_(x86)
-    char far *dosbox_bios_string = (char far *)(unsigned long)0xfe060001ul;
+    char far *dosbox_bios_string = (char far *)(unsigned long)MK_FP(0xfe06ul, 0x0001ul);
 
     if (_fstrcmp(dosbox_bios_string, "DOSBox-X BIOS v1.0") == 0) {
         return EMULATOR_DOSBOX_X;

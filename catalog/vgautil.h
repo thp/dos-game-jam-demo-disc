@@ -4,6 +4,7 @@ enum DisplayAdapter {
     DISPLAY_ADAPTER_CGA = 0,
     DISPLAY_ADAPTER_EGA = 1,
     DISPLAY_ADAPTER_VGA = 2,
+    DISPLAY_ADAPTER_VESA = 3,
 };
 
 static const char *
@@ -11,6 +12,7 @@ DISPLAY_ADAPTER_NAMES[] = {
     "CGA",
     "EGA",
     "VGA",
+    "VESA",
 };
 
 static enum DisplayAdapter
@@ -161,7 +163,7 @@ enable_4bit_background()
             {
                 // http://www.techhelpmanual.com/901-color_graphics_adapter_i_o_ports.html
                 // Mirrored by BIOS at 0040:0065, which is also updated first
-                uint8_t far *mode_select_register = (uint8_t far *)0x00400065ul;
+                uint8_t far *mode_select_register = (uint8_t far *)MK_FP(0x0040ul, 0x0065ul);
                 *mode_select_register &= ~(1<<5);
                 outp(0x3d8, *mode_select_register);
             }

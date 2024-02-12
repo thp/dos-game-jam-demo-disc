@@ -1,0 +1,4 @@
+8x16 font used in the VESA Menu:
+
+facename Bm437 IBM PS/2thin2
+copyright FON conversion  2015 VileR, license: CC BY-SA 4.0

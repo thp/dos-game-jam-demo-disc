@@ -1,4 +1,30 @@
+#if defined(DJGPP)
+// http://www.delorie.com/djgpp/v2faq/faq17_7.html
+#include <sys/nearptr.h>
+#include <crt0.h>
+#define _fstrcmp strcmp
+#define _fstrcpy strcpy
+#define _fstrcat strcat
+#define _fmemcpy memcpy
+#define far
+#define __far
+void * MK_FP (unsigned short seg, unsigned short ofs)
+{
+if ( !(_crt0_startup_flags & _CRT0_FLAG_NEARPTR) )
+  if (!__djgpp_nearptr_enable ())
+    return (void *)0;
+return (void *) (seg*16 + ofs + __djgpp_conventional_base);
+}
+#include "types.h"
+#include "vesa.h"
+#include "vesa.c"
+
+static VBESURFACE *
+vbesurface_ptr;
+#endif
+
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -30,6 +56,7 @@
 #include "emuutil.h"
 
 #include "vgafont.h"
+#include "font_8x16.h"
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
@@ -70,20 +97,23 @@ show_screenshots(struct GameCatalog *cat, int game, int screenshot_idx);
 static void
 configure_text_mode();
 
-#define SCREEN_WIDTH (80)
 #if defined(VGAMENU)
-#  define SCREEN_HEIGHT (33)
+#  define VESA_WIDTH (640)
+#  define VESA_HEIGHT (480)
+#  define SCREEN_WIDTH (VESA_WIDTH / 8)
+#  define SCREEN_HEIGHT (VESA_HEIGHT / 16)
 #else
+#  define SCREEN_WIDTH (80)
 #  define SCREEN_HEIGHT (25)
 #endif
 
 static uint8_t
 SCREEN_BUFFER[SCREEN_WIDTH*SCREEN_HEIGHT][2];
 
-static uint8_t
+static int16_t
 screen_x = 0;
 
-static uint8_t
+static int16_t
 screen_y = 0;
 
 static uint8_t
@@ -165,15 +195,19 @@ screen_putch(char ch)
 {
     if (ch == '\n') {
         screen_x = 0;
-        if (screen_y <= SCREEN_HEIGHT) {
+        if (screen_y < SCREEN_HEIGHT - 1) {
             screen_y++;
         }
     } else {
+        if (screen_y >= SCREEN_HEIGHT || screen_x >= SCREEN_WIDTH) {
+            printf("error: y=%d, x=%d\n", screen_y, screen_x);
+            getch();
+        }
         SCREEN_BUFFER[SCREEN_WIDTH * screen_y + screen_x][0] = ch;
         SCREEN_BUFFER[SCREEN_WIDTH * screen_y + screen_x][1] = screen_attr;
         screen_x++;
         if (screen_x == SCREEN_WIDTH) {
-            if (screen_y <= SCREEN_HEIGHT) {
+            if (screen_y < SCREEN_HEIGHT - 1) {
                 screen_y++;
             }
             screen_x = 0;
@@ -360,6 +394,12 @@ render_background(const char *title)
     if (*title) {
         screen_y = 0;
         screen_x = (SCREEN_WIDTH - strlen(title) - 2) / 2;
+        if (screen_x < 0) {
+            screen_x = 0;
+        }
+        if (screen_x >= SCREEN_WIDTH) {
+            screen_x = SCREEN_WIDTH - 1;
+        }
 
         int save = screen_attr;
         screen_attr = (COLOR_FRAME_LABEL_BG << 4) | COLOR_FRAME_LABEL_FG;
@@ -723,8 +763,12 @@ update_palette()
     }
 }
 
+#if defined(VGAMENU)
+static uint8_t VGA_BACKBUFFER[320*200];
+#endif
+
 static void
-present()
+present(bool ui)
 {
     // wait for vertical retrace before copying
     while ((inp(0x3DA) & 8) != 0);
@@ -733,57 +777,58 @@ present()
     update_palette();
 
 #if defined(VGAMENU)
-    unsigned char __far *vga = (unsigned char __far *)(0xa0000000L);
-    for (int x=0; x<320; ++x) {
-        vga[x] += 64;
-        vga[320*199+x] += 64;
+    int w = vbesurface_ptr->x_resolution;
+    int h = vbesurface_ptr->y_resolution;
+
+    uint8_t *vga = (uint8_t *)vbesurface_ptr->offscreen_ptr;
+    for (int y=0; y<h; ++y) {
+        for (int x=0; x<w; ++x) {
+            vga[y*w+x] = VGA_BACKBUFFER[(y*200/h)*320 + x*320/w];
+        }
     }
-    for (int y=0; y<SCREEN_HEIGHT; ++y) {
-        for (int x=0; x<SCREEN_WIDTH; ++x) {
-            unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
-            if (ch == 0xb2) {
-                continue;
-            }
 
-            unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
+    if (ui) {
+        for (int y=0; y<SCREEN_HEIGHT; ++y) {
+            for (int x=0; x<SCREEN_WIDTH; ++x) {
+                unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
+                if (ch == 0xb2) {
+                    continue;
+                }
 
-            unsigned char colors[2];
-                colors[0]=(attr >> 4) & 0x0F;
-                colors[1]=(attr >> 0) & 0x0F;
+                unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
 
-            unsigned char rows[6];
-                rows[0]=(VGAFONT[ch*3+0] >> 0) & 0x0F;
-                rows[1]=(VGAFONT[ch*3+0] >> 4) & 0x0F;
-                rows[2]=(VGAFONT[ch*3+1] >> 0) & 0x0F;
-                rows[3]=(VGAFONT[ch*3+1] >> 4) & 0x0F;
-                rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
-                rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
+                unsigned char colors[2];
+                    colors[0]=(attr >> 4) & 0x0F;
+                    colors[1]=(attr >> 0) & 0x0F;
 
-            for (int row=0; row<6; ++row) {
-                for (int column=0; column<4; ++column) {
-                    int yy = (1+y*6+row);
-                    int xx = x*4+column;
+                for (int row=0; row<16; ++row) {
+                    for (int column=0; column<8; ++column) {
+                        int yy = y*16+row;
+                        int xx = x*8+column;
 
-                    unsigned char color = (rows[row] >> (3-column)) & 1;
+                        unsigned char color = (FONT_8x16[ch*16+row] >> (8-column)) & 1;
 
-                    if (ch == 0xb0) {
-                        if ((xx ^ yy) & 1) {
-                            continue;
+                        if (ch == 0xb0) {
+                            if ((xx ^ yy) & 1) {
+                                continue;
+                            }
+                            color = 0;
                         }
-                        color = 0;
-                    }
 
-                    if (color == 0) {
-                        vga[yy*320+xx] += 64;
-                    } else {
-                        vga[yy*320 + xx] = colors[color];
+                        if (color == 0) {
+                            vga[yy*w+xx] += 64;
+                        } else {
+                            vga[yy*w+xx] = colors[color];
+                        }
                     }
                 }
             }
         }
     }
+
+    flipScreen();
 #else
-    short __far *screen = (short __far *)(0xb8000000L);
+    short __far *screen = (short __far *)MK_FP(0xb800ul, 0x0000ul);
     _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
 #endif
 }
@@ -1089,7 +1134,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     // avoid extraneous redraws / "snow" in the graphics
     if (is_fading()) {
         if (!kbhit()) {
-            present();
+            present(true);
             return 0;
         }
     }
@@ -1217,7 +1262,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.saved_cursor = state->cursor;
             state->search.saved_offset = state->offset;
         }
-    } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VGA) {
+    } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VESA) {
 #if defined(VGAMENU)
         while (1) {
             if (state->game != -1) {
@@ -1229,6 +1274,8 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             } else {
                 show_screenshots(state->cat, -1, state->screenshot_idx);
             }
+
+            present(false);
 
             int ch = getch();
             if (ch == 0) {
@@ -1319,7 +1366,7 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             draw_statusbar(state->search.search_str);
         }
 
-        present();
+        present(true);
 
         if (choice_dialog_handle_input(state, n)) {
             break;
@@ -1355,12 +1402,14 @@ get_excuse(const struct GameCatalogGame *game)
         return "Needs EGA";
     }
 
-    if ((game->flags & FLAG_REQUIRES_VGA) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+    if ((game->flags & FLAG_REQUIRES_VGA) != 0 && (display_adapter_type == DISPLAY_ADAPTER_CGA ||
+                                                   display_adapter_type == DISPLAY_ADAPTER_EGA)) {
         return "Needs VGA";
     }
 
-    // TODO: Allow for detecting VBE
-    if ((game->flags & FLAG_REQUIRES_VESA) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+    // TODO: Don't assume VGA implies VESA
+    if ((game->flags & FLAG_REQUIRES_VESA) != 0 && (display_adapter_type == DISPLAY_ADAPTER_CGA ||
+                                                    display_adapter_type == DISPLAY_ADAPTER_EGA)) {
         return "Needs VESA";
     }
 
@@ -1505,13 +1554,32 @@ get_text_game(int i, void *user_data)
     return NULL;
 }
 
+enum GameLaunchChoice {
+    CHOICE_BACK = 0,
+    CHOICE_LAUNCH = 1,
+    CHOICE_README = 2,
+    MAX_CHOICES,
+};
+
+static const char *
+GAME_LAUNCH_CHOICE[] = {
+    "(..)",
+    "Launch",
+    "Readme",
+};
+
+struct GameLaunchChoices {
+    uint8_t choices[MAX_CHOICES]; /* enum GameLaunchChoice */
+    uint8_t count;
+};
+
 const char *
 get_label_game(int i, void *user_data, const char **text_right)
 {
-    if (i == 0) {
-        return "(..)";
-    } else if (i == 1) {
-        return "Launch";
+    struct GameLaunchChoices *choices = user_data;
+
+    if (i < choices->count) {
+        return GAME_LAUNCH_CHOICE[choices->choices[i]];
     }
 
     return NULL;
@@ -1582,7 +1650,7 @@ fade_out()
 #if !defined(VGAMENU)
     brightness_up_down = -1;
     while (brightness) {
-        present();
+        present(true);
     }
 #endif
 }
@@ -1654,16 +1722,22 @@ vga_present_pcx(const char *filename)
             }
 
             long pixels_processed = 0;
-            uint8_t __far *VGA = (uint8_t __far *)(0xa0000000L);
+#if defined(VGAMENU)
+            uint8_t *VGA = VGA_BACKBUFFER;
+#else
+            uint8_t __far *VGA = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
+#endif
 
             static uint8_t chunk[512];
             int len = 0;
             int pos = 0;
 
+#if !defined(VGAMENU)
             for (int i=0; i<64; ++i) {
                 vga_set_palette_entry_direct(i+16, 0, 0, 0);
                 vga_set_palette_entry_direct(i+16+64, 0, 0, 0);
             }
+#endif
 
             while (pixels_processed < (long)width * (long)height) {
                 if (pos == len) {
@@ -1737,6 +1811,10 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 
 int main(int argc, char *argv[])
 {
+#if defined(VGAMENU)
+    __djgpp_nearptr_enable();
+#endif
+
     // Empty keyboard buffer
     while (kbhit()) {
         getch();
@@ -1777,8 +1855,7 @@ int main(int argc, char *argv[])
             dos_ipc.their_offset = 0;
         }
 
-        ipc_buffer = (struct IPCBuffer __far *)(((uint32_t)dos_ipc.their_ds << 16) |
-                                                ((uint32_t)dos_ipc.their_offset));
+        ipc_buffer = (struct IPCBuffer __far *)(MK_FP((uint32_t)dos_ipc.their_ds, (uint32_t)dos_ipc.their_offset));
 
         if (ipc_buffer && ipc_buffer->magic != IPC_BUFFER_MAGIC) {
             ipc_buffer = NULL;
@@ -1831,13 +1908,8 @@ int main(int argc, char *argv[])
     }
 
 #if defined(VGAMENU)
-    {
-        union REGS inregs, outregs;
-        inregs.h.ah = 0;
-        inregs.h.al = 0x13;
-
-        int86(0x10, &inregs, &outregs);
-    }
+    vbesurface_ptr = VBEinit(VESA_WIDTH, VESA_HEIGHT, 8);
+    display_adapter_type = DISPLAY_ADAPTER_VESA;
 #else
     configure_text_mode();
 #endif
@@ -1899,15 +1971,23 @@ int main(int argc, char *argv[])
             cds.offset = 0;
             cds.screenshot_idx = 0;
 
-            int num_choices = 2;
-            if (get_excuse(&(cat->games[game])) != NULL) {
-                // Disable launching if not supported on this machine
-                num_choices = 1;
+            struct GameLaunchChoices glc;
+            memset(&glc, 0, sizeof(glc));
+            glc.choices[glc.count++] = CHOICE_BACK;
+
+            if (get_excuse(&(cat->games[game])) == NULL) {
+                // Only enable launching if supported on this machine
+                glc.choices[glc.count++] = CHOICE_LAUNCH;
             }
 
-            int selection = choice_dialog(-1, -1, buf, &cds, num_choices,
+            // TODO: Add README support
+            if (false) {
+                glc.choices[glc.count++] = CHOICE_README;
+            }
+
+            int selection = choice_dialog(-1, -1, buf, &cds, glc.count,
                     get_text_game, &gtgud,
-                    get_label_game, NULL,
+                    get_label_game, &glc,
 #if defined(VGAMENU)
                     NULL, NULL,
 #else
@@ -1915,31 +1995,33 @@ int main(int argc, char *argv[])
 #endif
                     cat->names->d[game]);
 
-            if (selection == 0) {
+            if (glc.choices[selection] == CHOICE_BACK) {
                 ipc_buffer_pop_menu_trail_entry();
                 game = -1;
-            } else {
-                selection -= 1;
+            } else if (glc.choices[selection] == CHOICE_README) {
+                // TODO
+            } else if (glc.choices[selection] == CHOICE_LAUNCH) {
+                // TODO: Index 0 forced here, so that the first choice (back)
+                // is pre-selected when we return from the launched game
+                ipc_buffer_add_menu_trail_entry(0, here);
 
-                ipc_buffer_add_menu_trail_entry(selection, here);
+                // pop menu selection again
+                ipc_buffer_pop_menu_trail_entry();
 
-                if (selection == 0) {
-                    // pop menu selection again
-                    ipc_buffer_pop_menu_trail_entry();
+                if (ipc_buffer) {
+                    ipc_buffer->request = IPC_RUN_GAME;
+                    ipc_buffer->game_flags = cat->games[game].flags;
 
-                    if (ipc_buffer) {
-                        ipc_buffer->request = IPC_RUN_GAME;
-                        ipc_buffer->game_flags = cat->games[game].flags;
+                    _fstrcpy(ipc_buffer->title, cat->names->d[game]);
 
-                        _fstrcpy(ipc_buffer->title, cat->names->d[game]);
+                    _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
+                    _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
 
-                        _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
-                        _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
-
-                        fade_out();
-                        return 0;
-                    }
+                    fade_out();
+                    return 0;
                 }
+            } else {
+                // Unknown selection
             }
         } else {
             struct GetLabelGroupUserData glgud;
@@ -2004,6 +2086,9 @@ int main(int argc, char *argv[])
 
     fade_out();
 
+#if defined(VGAMENU)
+    VBEshutdown();
+#endif
     textmode_reset();
 
     return 0;

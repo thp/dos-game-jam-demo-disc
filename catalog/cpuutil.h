@@ -1,5 +1,31 @@
 #pragma once
 
+enum CPUType {
+    CPU_UNKNOWN = 0,
+    CPU_8086,
+    CPU_286,
+    CPU_386,
+};
+
+static const char *
+CPU_TYPES[] = {
+    "Unknown",
+    "8086",
+    "286",
+    "386+",
+};
+
+#if defined(DJGPP)
+
+static enum CPUType
+detect_cpu_type(void)
+{
+    // DJGPP is a 32-bit compiler
+    return CPU_386;
+}
+
+#else
+
 extern short get_flags(void);
 #pragma aux get_flags = \
         "pushf" \
@@ -16,21 +42,6 @@ extern short check_flags_write_one(void);
         "pop ax" \
         "popf" \
     value [ax];
-
-enum CPUType {
-    CPU_UNKNOWN = 0,
-    CPU_8086,
-    CPU_286,
-    CPU_386,
-};
-
-static const char *
-CPU_TYPES[] = {
-    "Unknown",
-    "8086",
-    "286",
-    "386+",
-};
 
 static enum CPUType
 detect_cpu_type(void)
@@ -54,3 +65,5 @@ detect_cpu_type(void)
 
     return CPU_UNKNOWN;
 }
+
+#endif

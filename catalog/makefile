@@ -1,4 +1,8 @@
-default: gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe demodisc.iso
+TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe
+
+default: $(TARGETS)
+
+iso: demodisc.iso
 
 CFLAGS_VERSION += -DVERSION=\"$(shell git describe --always --dirty)\"
 CFLAGS_VERSION += -DBUILDDATE=\"$(shell env LC_ALL=C date +%F)\"
@@ -21,8 +25,8 @@ menu.exe: menu.c gamectlg.c
 	rm -f menu.o
 
 vgamenu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -DVGAMENU -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
-	rm -f menu.o
+	i586-pc-msdosdjgpp-gcc -o $@ -DVGAMENU menu.c gamectlg.c -Os $(CFLAGS_VERSION) -Ivesa-dos-djgpp/src
+	i586-pc-msdosdjgpp-strip -s -x $@
 
 start.exe: start.c chain.o
 	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
@@ -35,7 +39,7 @@ vgastart.exe: start.c chain.o
 chain.o: chain.s
 	owcc -c -o $@ $^
 
-demodisc.iso: gamectlg.dat menu.exe start.exe
+demodisc.iso: $(TARGETS)
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -b FD13BOOT.IMG -o $@ -f layout
 
 refresh:
@@ -48,4 +52,4 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-.PHONY: clean default extra distclean refresh
+.PHONY: clean default extra distclean refresh iso
