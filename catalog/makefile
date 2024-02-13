@@ -12,6 +12,8 @@ ifeq ($V,1)
 PYTHON_EXTRA := --verbose
 endif
 
+DOSBOX ?= dosbox-x
+
 extra: default pcatalog
 
 gamectlg.dat: csv2dat.py gamectlg.csv
@@ -60,4 +62,13 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-.PHONY: clean default extra distclean refresh iso
+run: start.exe menu.exe
+	$(DOSBOX) $<
+
+runvga: vgastart.exe vgamenu.exe
+	$(DOSBOX) $<
+
+boot: demodisc.iso
+	qemu-system-x86_64 -cdrom $< -device sb16
+
+.PHONY: clean default extra distclean refresh iso run runvga boot
