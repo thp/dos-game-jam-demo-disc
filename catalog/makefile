@@ -48,4 +48,13 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-.PHONY: clean default extra distclean refresh
+run: start.exe menu.exe
+	dosbox-x $<
+
+runvga: vgastart.exe vgamenu.exe
+	dosbox-x $<
+
+boot: demodisc.iso
+	qemu-system-x86_64 -cdrom $< -device sb16
+
+.PHONY: clean default extra distclean refresh run runvga boot
