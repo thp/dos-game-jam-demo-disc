@@ -304,7 +304,6 @@ void left_border(int fg, int bg)
 }
 
 struct HotKey {
-    uint8_t only_vga;
     const char *key;
     const char *func;
 };
@@ -323,35 +322,31 @@ void draw_statusbar(const char *search_string)
 
     static const struct HotKey
     KEYS[] = {
-        { 0, "ESC", "Back" },
+        { "ESC", "Back" },
 #if !defined(VGAMENU)
-        { 0, "F2", "Color Theme" },
+        { "F2", "Color Theme" },
 #endif
-        { 0, "F3", "Search" },
+        { "F3", "Search" },
 #if defined(VGAMENU)
-        { 1, "F4", "Hide UI" },
-        { 1, "L/R", "Screenshots" },
+        { "F4", "Hide UI" },
+        { "L/R", "Screenshots" },
 #endif
-        { 0, "Enter", "Go" },
-        { 0, "Arrows", "Move" },
-        { 0, NULL, NULL },
+        { "Enter", "Go" },
+        { "Arrows", "Move" },
+        { NULL, NULL },
     };
 
     static const struct HotKey
     SEARCH_KEYS[] = {
-        { 0, "Up", "Previous" },
-        { 0, "Down", "Next" },
-        { 0, "Enter", "Done" },
-        { 0, NULL, NULL },
+        { "Up", "Previous" },
+        { "Down", "Next" },
+        { "Enter", "Done" },
+        { NULL, NULL },
     };
 
     const struct HotKey *keys = search_string ? SEARCH_KEYS : KEYS;
 
     for (int i=0; keys[i].key != NULL; ++i) {
-        if (keys[i].only_vga && display_adapter_type != DISPLAY_ADAPTER_VGA) {
-            continue;
-        }
-
         screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
         screen_print(keys[i].key);
         screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
