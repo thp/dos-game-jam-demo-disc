@@ -1247,6 +1247,12 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
                 state->screenshot_idx++;
             }
         }
+#else
+		if(state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
+			char cmdline[128];
+			sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[state->game]);
+			system(cmdline);
+		}
 #endif
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;

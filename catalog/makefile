@@ -1,4 +1,5 @@
-default: gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe demodisc.iso
+default: gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe viewshot.exe \
+	demodisc.iso
 
 CFLAGS_VERSION += -DVERSION=\"$(shell git describe --always --dirty)\"
 CFLAGS_VERSION += -DBUILDDATE=\"$(shell env LC_ALL=C date +%F)\"
@@ -35,7 +36,11 @@ vgastart.exe: start.c chain.o
 chain.o: chain.s
 	owcc -c -o $@ $^
 
-demodisc.iso: gamectlg.dat menu.exe start.exe
+viewshot.exe: ../viewshot/viewshot.c
+	cd ../viewshot && wmake
+	cp ../viewshot/viewshot.exe .
+
+demodisc.iso: gamectlg.dat menu.exe start.exe viewshot.exe
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -b FD13BOOT.IMG -o $@ -f layout
 
 refresh:
@@ -48,7 +53,7 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-run: start.exe menu.exe
+run: start.exe menu.exe viewshot.exe
 	dosbox-x $<
 
 runvga: vgastart.exe vgamenu.exe
