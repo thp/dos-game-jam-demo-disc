@@ -1,4 +1,4 @@
-TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe vesamenu.exe vesastrt.exe
+TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe vesamenu.exe vesastrt.exe viewshot.exe
 
 default: $(TARGETS)
 
@@ -49,6 +49,10 @@ vesastrt.exe: start.c chain.o
 chain.o: chain.s
 	owcc -c -o $@ $^
 
+viewshot.exe: ../viewshot/viewshot.c
+	cd ../viewshot && wmake
+	cp ../viewshot/viewshot.exe .
+
 demodisc.iso: $(TARGETS)
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -b FD13BOOT.IMG -o $@ -f layout
 
@@ -62,7 +66,7 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-run: start.exe menu.exe
+run: start.exe menu.exe viewshot.exe
 	$(DOSBOX) $<
 
 runvga: vgastart.exe vgamenu.exe
