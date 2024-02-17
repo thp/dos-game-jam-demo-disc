@@ -1469,10 +1469,12 @@ get_excuse(const struct GameCatalogGame *game)
         return "Needs VGA";
     }
 
-    // TODO: Don't assume VGA implies VESA
-    if ((game->flags & FLAG_REQUIRES_VESA) != 0 && (display_adapter_type == DISPLAY_ADAPTER_CGA ||
-                                                    display_adapter_type == DISPLAY_ADAPTER_EGA)) {
-        return "Needs VESA";
+    if ((game->flags & FLAG_REQUIRES_VBE1) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA && display_adapter_type != DISPLAY_ADAPTER_VESA) {
+        return "Needs VBE";
+    }
+
+    if ((game->flags & FLAG_REQUIRES_VBE2) && display_adapter_type != DISPLAY_ADAPTER_VGA && display_adapter_type != DISPLAY_ADAPTER_VESA) {
+        return "Needs VBE 2.x";
     }
 
     if ((game->flags & FLAG_MOUSE_REQUIRED) != 0 && !mouse_available) {
