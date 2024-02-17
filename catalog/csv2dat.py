@@ -149,7 +149,8 @@ VIDEO_ORDERING = [
     'Tandy',
     'EGA',
     'VGA',
-    'VESA',
+    'VBE1',
+    'VBE2',
 ]
 
 SOUND_ORDERING = [
@@ -270,8 +271,9 @@ FLAG_KEYBOARD_SUPPORTED = (1 << 6)
 FLAG_JOYSTICK_SUPPORTED = (1 << 7)
 FLAG_REQUIRES_EGA = (1 << 8)
 FLAG_REQUIRES_VGA = (1 << 9)
-FLAG_REQUIRES_VESA = (1 << 10)
-FLAG_DOSBOX_INCOMPATIBLE = (1 << 11)
+FLAG_REQUIRES_VBE1 = (1 << 10)
+FLAG_REQUIRES_VBE2 = (1 << 11)
+FLAG_DOSBOX_INCOMPATIBLE = (1 << 12)
 
 names = []
 descriptions = []
@@ -342,7 +344,8 @@ with open(args.outfile, 'wb') as fp:
         cga_supported = ('Text' in game['Video'] or 'CGA' in game['Video'])
         ega_supported = ('EGA' in game['Video'])
         vga_supported = ('VGA' in game['Video'])
-        vesa_supported = ('VESA' in game['Video'])
+        vbe1_supported = ('VBE1' in game['Video'])
+        vbe2_supported = ('VBE2' in game['Video'])
 
         if ega_supported and not cga_supported:
             flags |= FLAG_REQUIRES_EGA
@@ -350,8 +353,11 @@ with open(args.outfile, 'wb') as fp:
         if vga_supported and not ega_supported and not cga_supported:
             flags |= FLAG_REQUIRES_VGA
 
-        if vesa_supported and not vga_supported and not ega_supported and not cga_supported:
-            flags |= FLAG_REQUIRES_VESA
+        if not vga_supported and not ega_supported and not cga_supported:
+            if vbe1_supported:
+                flags |= FLAG_REQUIRES_VBE1
+            elif vbe2_supported:
+                flags |= FLAG_REQUIRES_VBE2
 
         if game['Keyboard']:
             flags |= FLAG_KEYBOARD_SUPPORTED

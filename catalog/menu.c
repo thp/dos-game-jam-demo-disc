@@ -297,6 +297,8 @@ void draw_statusbar(const char *search_string)
 #if defined(VGAMENU)
         { 1, "F4", "Hide UI" },
         { 1, "L/R", "Screenshots" },
+#else
+		{ 0, "F4", "Screenshots" },
 #endif
         { 0, "Enter", "Go" },
         { 0, "Arrows", "Move" },
@@ -1366,9 +1368,12 @@ get_excuse(const struct GameCatalogGame *game)
     }
 
     // TODO: Allow for detecting VBE
-    if ((game->flags & FLAG_REQUIRES_VESA) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
-        return "Needs VESA";
+    if ((game->flags & FLAG_REQUIRES_VBE1) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+        return "Needs VBE";
     }
+	if ((game->flags & FLAG_REQUIRES_VBE2) && display_adapter_type != DISPLAY_ADAPTER_VGA) {
+		return "Needs VBE 2.x";
+	}
 
     if ((game->flags & FLAG_MOUSE_REQUIRED) != 0 && !mouse_available) {
         return "Needs mouse";
