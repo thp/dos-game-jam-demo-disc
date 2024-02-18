@@ -62,7 +62,7 @@ int main(int argc, char **argv)
 				break;
 
 			default:
-				printf("S:%x\n", (unsigned int)c);
+				//printf("S:%x\n", (unsigned int)c);
 				break;
 			}
 			special = 0;
@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 				break;
 
 			default:
-				printf("C:%x\n", (unsigned int)c);
+				//printf("C:%x\n", (unsigned int)c);
 			}
 		}
 	}
