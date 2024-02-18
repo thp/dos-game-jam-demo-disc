@@ -68,7 +68,10 @@ run: start.exe menu.exe
 runvga: vgastart.exe vgamenu.exe
 	$(DOSBOX) $<
 
+runvesa: vesastrt.exe vesamenu.exe
+	$(DOSBOX) $<
+
 boot: demodisc.iso
 	qemu-system-x86_64 -cdrom $< -device sb16
 
-.PHONY: clean default extra distclean refresh iso run runvga boot
+.PHONY: clean default extra distclean refresh iso run runvga runvesa boot
