@@ -11,6 +11,15 @@ struct MenuTrailEntry {
 enum IPCRequest {
     IPC_EXIT = 0,
     IPC_RUN_GAME = 1,
+    IPC_SWITCH_MENU_MODE = 2,
+};
+
+enum MenuMode {
+    MENU_MODE_TEXT = 0,
+    MENU_MODE_VGA = 1,
+    MENU_MODE_VESA = 2,
+
+    MENU_MODE_COUNT,
 };
 
 #define IPC_BUFFER_MAGIC (0xd05d2023)
@@ -32,4 +41,6 @@ struct IPCBuffer {
 
     struct MenuTrailEntry menu_trail[32];
     uint8_t menu_trail_len;
+
+    uint8_t menu_mode;
 };

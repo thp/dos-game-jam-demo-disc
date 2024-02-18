@@ -45,6 +45,7 @@ vbesurface_ptr;
 #define KEY_F2 (0x100 | 60)
 #define KEY_F3 (0x100 | 61)
 #define KEY_F4 (0x100 | 62)
+#define KEY_F5 (0x100 | 63)
 #define KEY_ENTER (13)
 #define KEY_ESCAPE (27)
 #define KEY_BACKSPACE (8)
@@ -343,8 +344,8 @@ void draw_statusbar(const char *search_string)
 #else
         { "F4", "Screenshots" },
 #endif
-        { "Enter", "Go" },
-        { "Arrows", "Move" },
+        // TODO: Could hide "Video mode" on CGA/EGA
+        { "F5", "Video Mode" },
         { NULL, NULL },
     };
 
@@ -1310,6 +1311,15 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.saved_cursor = state->cursor;
             state->search.saved_offset = state->offset;
         }
+    } else if (ch == KEY_F5) {
+        // TODO: Need to store current menu state in ipc_buffer
+        // TODO: Could check which video modes are supported, and only switch
+        // to the video mode that is supported (no VGA on CGA, EGA, and no VESA
+        // on anything that doesn't support VESA, obviously...)
+        ipc_buffer->menu_mode = (ipc_buffer->menu_mode + 1) % MENU_MODE_COUNT;
+        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+        textmode_reset();
+        exit(0);
     } else if (ch == KEY_F4 && (display_adapter_type == DISPLAY_ADAPTER_VGA || display_adapter_type == DISPLAY_ADAPTER_VESA)) {
 #if defined(VGAMENU) || defined(VESAMENU)
         while (1) {
@@ -1925,28 +1935,33 @@ int main(int argc, char *argv[])
             ipc_buffer = NULL;
         }
 
+#if defined(VGAMENU) || defined(VESAMENU)
+        // Reset color palette when entering graphics modes
+        generate_random_palette();
+#endif
+
         if (ipc_buffer) {
             if (ipc_buffer->color_palette_len == 0) {
                 generate_random_palette();
+#if !defined(VGAMENU) && !defined(VESAMENU)
+                // Only save color palette in ipc_buffer in text mode
                 store_color_palette();
+#endif
             } else {
+#if !defined(VGAMENU) && !defined(VESAMENU)
+                // Only restore color palette from ipc_buffer in text mode
                 for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
                     DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
                     DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
                     DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
                 }
+#endif
             }
         }
     }
 
     if (!ipc_buffer) {
-#if defined(VGAMENU)
-        printf("Use VGASTART.EXE to start the menu.\n");
-#elif defined(VESAMENU)
-        printf("Use VESASTRT.EXE to start the menu.\n");
-#else
         printf("Use START.EXE to start the menu.\n");
-#endif
         return 1;
     }
 

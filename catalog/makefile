@@ -1,4 +1,4 @@
-TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe vesamenu.exe vesastrt.exe viewshot.exe
+TARGETS := gamectlg.dat vgamenu.exe menu.exe start.exe vesamenu.exe viewshot.exe
 
 default: $(TARGETS)
 
@@ -38,14 +38,6 @@ start.exe: start.c chain.o
 	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
 	rm -f start.o
 
-vgastart.exe: start.c chain.o
-	owcc -o $@ $^ -DVGAMENU -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
-	rm -f start.o
-
-vesastrt.exe: start.c chain.o
-	owcc -o $@ $^ -DVESAMENU -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
-	rm -f start.o
-
 chain.o: chain.s
 	owcc -c -o $@ $^
 
@@ -61,21 +53,15 @@ refresh:
 	python3 update-screenshot-counts.py
 
 clean:
-	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o vgamenu.exe menu.exe vgastart.exe start.exe start.o menu.o chain.o start.map vesamenu.exe vesastrt.exe
+	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o vgamenu.exe menu.exe start.exe start.o menu.o chain.o start.map vesamenu.exe
 
 distclean: clean
 	$(RM) demodisc.iso
 
-run: start.exe menu.exe viewshot.exe
-	$(DOSBOX) $<
-
-runvga: vgastart.exe vgamenu.exe
-	$(DOSBOX) $<
-
-runvesa: vesastrt.exe vesamenu.exe
+run: start.exe menu.exe viewshot.exe vgamenu.exe vesamenu.exe
 	$(DOSBOX) $<
 
 boot: demodisc.iso
 	qemu-system-x86_64 -cdrom $< -device sb16
 
-.PHONY: clean default extra distclean refresh iso run runvga runvesa boot
+.PHONY: clean default extra distclean refresh iso run boot

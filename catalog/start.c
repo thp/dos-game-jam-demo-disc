@@ -158,13 +158,18 @@ int runmenu()
     *dest++ = '\0';
 
     printf("Launching menu...\n");
-#if defined(VGAMENU)
-    return (run_command("vgamenu.exe", args) == 0);
-#elif defined(VESAMENU)
-    return (run_command("vesamenu.exe", args) == 0);
-#else
-    return (run_command("menu.exe", args) == 0);
-#endif
+
+    switch (ipc_buffer.menu_mode) {
+        case MENU_MODE_TEXT:
+        default:
+            return (run_command("menu.exe", args) == 0);
+
+        case MENU_MODE_VGA:
+            return (run_command("vgamenu.exe", args) == 0);
+
+        case MENU_MODE_VESA:
+            return (run_command("vesamenu.exe", args) == 0);
+    }
 }
 
 static void _interrupt _far
@@ -311,6 +316,7 @@ int main()
     int result = 0;
 
     ipc_buffer.magic = IPC_BUFFER_MAGIC;
+    ipc_buffer.menu_mode = MENU_MODE_TEXT;
 
     sprintf(ipc_buffer.catalog_filename, "GAMECTLG.DAT");
 
@@ -339,6 +345,10 @@ int main()
             break;
         } else if (ipc_buffer.request == IPC_RUN_GAME) {
             rungame();
+        } else if (ipc_buffer.request == IPC_SWITCH_MENU_MODE) {
+            // The menu we just ran modified ipc_buffer.menu_mode,
+            // just start the menu again to load the new mode
+            continue;
         }
     }
 
