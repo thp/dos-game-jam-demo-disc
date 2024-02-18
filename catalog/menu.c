@@ -340,6 +340,8 @@ void draw_statusbar(const char *search_string)
 #if defined(VGAMENU) || defined(VESAMENU)
         { "F4", "Hide UI" },
         { "L/R", "Screenshots" },
+#else
+        { "F4", "Screenshots" },
 #endif
         { "Enter", "Go" },
         { "Arrows", "Move" },
@@ -1308,7 +1310,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.saved_cursor = state->cursor;
             state->search.saved_offset = state->offset;
         }
-    } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VESA) {
+    } else if (ch == KEY_F4 && (display_adapter_type == DISPLAY_ADAPTER_VGA || display_adapter_type == DISPLAY_ADAPTER_VESA)) {
 #if defined(VGAMENU) || defined(VESAMENU)
         while (1) {
             if (state->game != -1) {
@@ -1341,11 +1343,20 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             }
         }
 #else
-		if(state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
-			char cmdline[128];
-			sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[state->game]);
-			system(cmdline);
-		}
+        int game_id = -1;
+
+        if (state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
+            game_id = state->game;
+        } else if (state->here && state->here->num_children && state->cursor > 0) {
+            game_id = state->here->children[state->cursor-1];
+        }
+
+        if (game_id != -1) {
+            char cmdline[128];
+            sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[game_id]);
+            system(cmdline);
+            configure_text_mode();
+        }
 #endif
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;

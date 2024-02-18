@@ -50,7 +50,7 @@ chain.o: chain.s
 	owcc -c -o $@ $^
 
 viewshot.exe: ../viewshot/viewshot.c
-	cd ../viewshot && wmake
+	cd ../viewshot && env INCLUDE=$(WATCOM)/h wmake
 	cp ../viewshot/viewshot.exe .
 
 demodisc.iso: $(TARGETS)
