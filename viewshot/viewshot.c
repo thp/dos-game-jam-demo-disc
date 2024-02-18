@@ -87,6 +87,7 @@ int main(int argc, char **argv)
 
 			default:
 				//printf("C:%x\n", (unsigned int)c);
+                                break;
 			}
 		}
 	}
