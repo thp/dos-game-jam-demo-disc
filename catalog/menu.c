@@ -55,8 +55,13 @@ vbesurface_ptr;
 #include "cpuutil.h"
 #include "emuutil.h"
 
+#if defined(VGAMENU)
 #include "vgafont.h"
+#endif
+
+#if defined(VESAMENU)
 #include "font_8x16.h"
+#endif
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
@@ -98,6 +103,11 @@ static void
 configure_text_mode();
 
 #if defined(VGAMENU)
+#  define VGA_WIDTH (320)
+#  define VGA_HEIGHT (200)
+#  define SCREEN_WIDTH (VGA_WIDTH / 4)
+#  define SCREEN_HEIGHT (VGA_HEIGHT / 6)
+#elif defined(VESAMENU)
 #  define VESA_WIDTH (640)
 #  define VESA_HEIGHT (480)
 #  define SCREEN_WIDTH (VESA_WIDTH / 8)
@@ -141,7 +151,7 @@ static uint8_t
 
     // frame label
     COLOR_FRAME_LABEL_BG = 0,
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
     COLOR_FRAME_LABEL_FG = 3 + 8,
 #else
     COLOR_FRAME_LABEL_FG = 0xf,
@@ -174,7 +184,7 @@ static uint8_t
 screen_attr = 7;
 
 static int32_t
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
 brightness = 255;
 #else
 brightness = 0;
@@ -323,11 +333,11 @@ void draw_statusbar(const char *search_string)
     static const struct HotKey
     KEYS[] = {
         { "ESC", "Back" },
-#if !defined(VGAMENU)
+#if !defined(VGAMENU) && !defined(VESAMENU)
         { "F2", "Color Theme" },
 #endif
         { "F3", "Search" },
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
         { "F4", "Hide UI" },
         { "L/R", "Screenshots" },
 #endif
@@ -758,7 +768,7 @@ update_palette()
     }
 }
 
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
 static uint8_t VGA_BACKBUFFER[320*200];
 #endif
 
@@ -771,11 +781,20 @@ present(bool ui)
 
     update_palette();
 
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
+
+#if defined(VESAMENU)
     int w = vbesurface_ptr->x_resolution;
     int h = vbesurface_ptr->y_resolution;
 
     uint8_t *vga = (uint8_t *)vbesurface_ptr->offscreen_ptr;
+#elif defined(VGAMENU)
+    int w = VGA_WIDTH;
+    int h = VGA_HEIGHT;
+
+    uint8_t __far *vga = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
+#endif
+
     for (int y=0; y<h; ++y) {
         for (int x=0; x<w; ++x) {
             vga[y*w+x] = VGA_BACKBUFFER[(y*200/h)*320 + x*320/w];
@@ -796,6 +815,37 @@ present(bool ui)
                     colors[0]=(attr >> 4) & 0x0F;
                     colors[1]=(attr >> 0) & 0x0F;
 
+#if defined(VGAMENU)
+                unsigned char rows[6];
+                    rows[0]=(VGAFONT[ch*3+0] >> 0) & 0x0F;
+                    rows[1]=(VGAFONT[ch*3+0] >> 4) & 0x0F;
+                    rows[2]=(VGAFONT[ch*3+1] >> 0) & 0x0F;
+                    rows[3]=(VGAFONT[ch*3+1] >> 4) & 0x0F;
+                    rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
+                    rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
+
+                for (int row=0; row<6; ++row) {
+                    for (int column=0; column<4; ++column) {
+                        int yy = y*6+row;
+                        int xx = x*4+column;
+
+                        unsigned char color = (rows[row] >> (3-column)) & 1;
+
+                        if (ch == 0xb0) {
+                            if ((xx ^ yy) & 1) {
+                                continue;
+                            }
+                            color = 0;
+                        }
+
+                        if (color == 0) {
+                            vga[yy*w+xx] += 64;
+                        } else {
+                            vga[yy*w+xx] = colors[color];
+                        }
+                    }
+                }
+#elif defined(VESAMENU)
                 for (int row=0; row<16; ++row) {
                     for (int column=0; column<8; ++column) {
                         int yy = y*16+row;
@@ -817,6 +867,7 @@ present(bool ui)
                         }
                     }
                 }
+#endif
             }
         }
     }
@@ -887,7 +938,7 @@ choice_dialog_measure(int n,
 static void
 generate_random_palette()
 {
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
     // first, generate background/disabled colors
     DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + 0;
     DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + 20;
@@ -1227,7 +1278,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     } else if (ch == KEY_ENTER) {
         return 1;
     } else if (ch == KEY_F2) {
-#if !defined(VGAMENU)
+#if !defined(VGAMENU) && !defined(VESAMENU)
         if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
             COLOR_DEFAULT_BG = 1 + (rand()%6);
             do {
@@ -1258,7 +1309,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.saved_offset = state->offset;
         }
     } else if (ch == KEY_F4 && display_adapter_type == DISPLAY_ADAPTER_VESA) {
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
         while (1) {
             if (state->game != -1) {
                 // on a game page
@@ -1312,7 +1363,7 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             get_label_func, get_label_func_user_data,
             frame_label, &height);
 
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
     if (height > 19) {
         height = 19;
     }
@@ -1338,8 +1389,7 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             render_background_func(render_background_func_user_data);
         }
 
-#if defined(VGAMENU)
-        // FIXME: Flickering fix (double buffering)
+#if defined(VGAMENU) || defined(VESAMENU)
         if (state->game != -1) {
             // on a game page
             show_screenshots(state->cat, state->game, state->screenshot_idx);
@@ -1642,7 +1692,7 @@ ipc_buffer_pop_menu_trail_entry(void)
 static void
 fade_out()
 {
-#if !defined(VGAMENU)
+#if !defined(VGAMENU) && !defined(VESAMENU)
     brightness_up_down = -1;
     while (brightness) {
         present(true);
@@ -1717,7 +1767,7 @@ vga_present_pcx(const char *filename)
             }
 
             long pixels_processed = 0;
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
             uint8_t *VGA = VGA_BACKBUFFER;
 #else
             uint8_t __far *VGA = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
@@ -1727,7 +1777,7 @@ vga_present_pcx(const char *filename)
             int len = 0;
             int pos = 0;
 
-#if !defined(VGAMENU)
+#if !defined(VGAMENU) && !defined(VESAMENU)
             for (int i=0; i<64; ++i) {
                 vga_set_palette_entry_direct(i+16, 0, 0, 0);
                 vga_set_palette_entry_direct(i+16+64, 0, 0, 0);
@@ -1806,7 +1856,7 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 
 int main(int argc, char *argv[])
 {
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
     __djgpp_nearptr_enable();
 #endif
 
@@ -1823,7 +1873,7 @@ int main(int argc, char *argv[])
     emulator_type = detect_dos_emulator();
     mouse_available = have_mouse_driver();
 
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
     set_palette_entry = vga_set_palette_entry_direct;
 #else
     switch (display_adapter_type) {
@@ -1873,6 +1923,8 @@ int main(int argc, char *argv[])
     if (!ipc_buffer) {
 #if defined(VGAMENU)
         printf("Use VGASTART.EXE to start the menu.\n");
+#elif defined(VESAMENU)
+        printf("Use VESASTRT.EXE to start the menu.\n");
 #else
         printf("Use START.EXE to start the menu.\n");
 #endif
@@ -1903,6 +1955,14 @@ int main(int argc, char *argv[])
     }
 
 #if defined(VGAMENU)
+    {
+        union REGS inregs, outregs;
+        inregs.h.ah = 0;
+        inregs.h.al = 0x13;
+
+        int86(0x10, &inregs, &outregs);
+    }
+#elif defined(VESAMENU)
     vbesurface_ptr = VBEinit(VESA_WIDTH, VESA_HEIGHT, 8);
     display_adapter_type = DISPLAY_ADAPTER_VESA;
 #else
@@ -1983,7 +2043,7 @@ int main(int argc, char *argv[])
             int selection = choice_dialog(-1, -1, buf, &cds, glc.count,
                     get_text_game, &gtgud,
                     get_label_game, &glc,
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
                     NULL, NULL,
 #else
                     render_group_background, &brud,
@@ -2032,7 +2092,7 @@ int main(int argc, char *argv[])
             cds.offset = here->scroll_offset;
             cds.screenshot_idx = 0;
 
-#if defined(VGAMENU)
+#if defined(VGAMENU) || defined(VESAMENU)
             int selection = choice_dialog(2, 20, buf, &cds, max + 1,
                     NULL, NULL,
                     get_label_group, &glgud,
@@ -2081,7 +2141,7 @@ int main(int argc, char *argv[])
 
     fade_out();
 
-#if defined(VGAMENU)
+#if defined(VESAMENU)
     VBEshutdown();
 #endif
     textmode_reset();

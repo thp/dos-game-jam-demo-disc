@@ -1,4 +1,4 @@
-TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe
+TARGETS := gamectlg.dat vgamenu.exe menu.exe vgastart.exe start.exe vesamenu.exe vesastrt.exe
 
 default: $(TARGETS)
 
@@ -28,12 +28,20 @@ vgamenu.exe: menu.c gamectlg.c
 	i586-pc-msdosdjgpp-gcc -o $@ -DVGAMENU menu.c gamectlg.c -Os $(CFLAGS_VERSION) -Ivesa-dos-djgpp/src
 	i586-pc-msdosdjgpp-strip -s -x $@
 
+vesamenu.exe: menu.c gamectlg.c
+	i586-pc-msdosdjgpp-gcc -o $@ -DVESAMENU menu.c gamectlg.c -Os $(CFLAGS_VERSION) -Ivesa-dos-djgpp/src
+	i586-pc-msdosdjgpp-strip -s -x $@
+
 start.exe: start.c chain.o
 	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
 	rm -f start.o
 
 vgastart.exe: start.c chain.o
 	owcc -o $@ $^ -DVGAMENU -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
+	rm -f start.o
+
+vesastrt.exe: start.c chain.o
+	owcc -o $@ $^ -DVESAMENU -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
 	rm -f start.o
 
 chain.o: chain.s
@@ -47,7 +55,7 @@ refresh:
 	python3 update-screenshot-counts.py
 
 clean:
-	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o vgamenu.exe menu.exe vgastart.exe start.exe start.o menu.o chain.o start.map
+	$(RM) pcatalog gamectlg.dat pcatalog.o gamectlg.o vgamenu.exe menu.exe vgastart.exe start.exe start.o menu.o chain.o start.map vesamenu.exe vesastrt.exe
 
 distclean: clean
 	$(RM) demodisc.iso

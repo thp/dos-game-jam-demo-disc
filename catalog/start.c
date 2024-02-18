@@ -160,6 +160,8 @@ int runmenu()
     printf("Launching menu...\n");
 #if defined(VGAMENU)
     return (run_command("vgamenu.exe", args) == 0);
+#elif defined(VESAMENU)
+    return (run_command("vesamenu.exe", args) == 0);
 #else
     return (run_command("menu.exe", args) == 0);
 #endif
