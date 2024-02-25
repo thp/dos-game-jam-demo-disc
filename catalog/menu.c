@@ -773,7 +773,14 @@ update_palette()
 
 #if defined(VGAMENU) || defined(VESAMENU)
 static uint8_t VGA_BACKBUFFER[320*200];
+static uint8_t VGA_BACKBUFFER_BLUR[320*200];
 #endif
+
+static inline uint8_t
+sample_320_200(const uint8_t *backbuffer, int x, int y, int w, int h)
+{
+    return backbuffer[(y*200/h)*320 + x*320/w];
+}
 
 static void
 present(bool ui)
@@ -811,6 +818,9 @@ present(bool ui)
                 if (ch == 0xb2) {
                     continue;
                 }
+                if (ch == 0xb0) {
+                    continue;
+                }
 
                 unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
 
@@ -834,15 +844,8 @@ present(bool ui)
 
                         unsigned char color = (rows[row] >> (3-column)) & 1;
 
-                        if (ch == 0xb0) {
-                            if ((xx ^ yy) & 1) {
-                                continue;
-                            }
-                            color = 0;
-                        }
-
                         if (color == 0) {
-                            vga[yy*w+xx] += 64;
+                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER_BLUR, xx, yy, w, h);
                         } else {
                             vga[yy*w+xx] = colors[color];
                         }
@@ -856,15 +859,8 @@ present(bool ui)
 
                         unsigned char color = (FONT_8x16[ch*16+row] >> (8-column)) & 1;
 
-                        if (ch == 0xb0) {
-                            if ((xx ^ yy) & 1) {
-                                continue;
-                            }
-                            color = 0;
-                        }
-
                         if (color == 0) {
-                            vga[yy*w+xx] += 64;
+                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER_BLUR, xx, yy, w, h);
                         } else {
                             vga[yy*w+xx] = colors[color];
                         }
@@ -1763,7 +1759,7 @@ struct PCXHeader {
 };
 
 static void
-vga_present_pcx(const char *filename)
+vga_present_pcx(const char *filename, uint8_t *VGA, int palette_offset)
 {
     FILE *fp = fopen(filename, "rb");
     if (fp) {
@@ -1796,11 +1792,6 @@ vga_present_pcx(const char *filename)
             }
 
             long pixels_processed = 0;
-#if defined(VGAMENU) || defined(VESAMENU)
-            uint8_t *VGA = VGA_BACKBUFFER;
-#else
-            uint8_t __far *VGA = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
-#endif
 
             static uint8_t chunk[512];
             int len = 0;
@@ -1808,8 +1799,7 @@ vga_present_pcx(const char *filename)
 
 #if !defined(VGAMENU) && !defined(VESAMENU)
             for (int i=0; i<64; ++i) {
-                vga_set_palette_entry_direct(i+16, 0, 0, 0);
-                vga_set_palette_entry_direct(i+16+64, 0, 0, 0);
+                vga_set_palette_entry_direct(i+16+palette_offset, 0, 0, 0);
             }
 #endif
 
@@ -1830,10 +1820,10 @@ vga_present_pcx(const char *filename)
                     ch = chunk[pos++];
 
                     for (int i=0; i<repeat; ++i) {
-                        VGA[pixels_processed++] = ch + 16;
+                        VGA[pixels_processed++] = ch + 16 + palette_offset;
                     }
                 } else {
-                    VGA[pixels_processed++] = ch + 16;
+                    VGA[pixels_processed++] = ch + 16 + palette_offset;
                 }
             }
 
@@ -1844,13 +1834,8 @@ vga_present_pcx(const char *filename)
                     int r = fgetc(fp);
                     int g = fgetc(fp);
                     int b = fgetc(fp);
-                    vga_set_palette_entry_direct(i+16, r, g, b);
 
-                    r /= 10;
-                    g /= 10; g += 20;
-                    b /= 10; b += 30;
-
-                    vga_set_palette_entry_direct(i+16+64, r, g, b);
+                    vga_set_palette_entry_direct(i+16+palette_offset, r, g, b);
                 }
             } else {
                 // TODO: Error message (no palette)
@@ -1866,6 +1851,7 @@ vga_present_pcx(const char *filename)
     }
 }
 
+#if defined(VGAMENU) || defined(VESAMENU)
 static void
 show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 {
@@ -1880,8 +1866,11 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 
     char filename[128];
     sprintf(filename, "pcx/%s/shot%d.pcx", game_name, current_idx);
-    vga_present_pcx(filename);
+    vga_present_pcx(filename, VGA_BACKBUFFER, 0);
+    sprintf(filename, "pcx/%s/blur%d.pcx", game_name, current_idx);
+    vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, 64);
 }
+#endif
 
 int main(int argc, char *argv[])
 {
