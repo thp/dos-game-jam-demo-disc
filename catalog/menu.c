@@ -121,6 +121,9 @@ configure_text_mode();
 static uint8_t
 SCREEN_BUFFER[SCREEN_WIDTH*SCREEN_HEIGHT][2];
 
+static uint8_t
+SCREEN_BUFFER_OLD[SCREEN_WIDTH*SCREEN_HEIGHT][2];
+
 static int16_t
 screen_x = 0;
 
@@ -772,12 +775,12 @@ update_palette()
 }
 
 #if defined(VGAMENU) || defined(VESAMENU)
-static uint8_t VGA_BACKBUFFER[320*200];
-static uint8_t VGA_BACKBUFFER_BLUR[320*200];
+static uint8_t __far VGA_BACKBUFFER[320L*200L];
+static uint8_t __far VGA_BACKBUFFER_BLUR[320L*200L];
 #endif
 
 static inline uint8_t
-sample_320_200(const uint8_t *backbuffer, int x, int y, int w, int h)
+sample_320_200(const uint8_t __far *backbuffer, long x, long y, long w, long h)
 {
     return backbuffer[(y*200/h)*320 + x*320/w];
 }
@@ -794,34 +797,26 @@ present(bool ui)
 #if defined(VGAMENU) || defined(VESAMENU)
 
 #if defined(VESAMENU)
-    int w = vbesurface_ptr->x_resolution;
-    int h = vbesurface_ptr->y_resolution;
+    uint32_t w = vbesurface_ptr->x_resolution;
+    uint32_t h = vbesurface_ptr->y_resolution;
 
-    uint8_t *vga = (uint8_t *)vbesurface_ptr->offscreen_ptr;
+    uint8_t __far *vga = (uint8_t *)vbesurface_ptr->offscreen_ptr;
 #elif defined(VGAMENU)
-    int w = VGA_WIDTH;
-    int h = VGA_HEIGHT;
+    uint32_t w = VGA_WIDTH;
+    uint32_t h = VGA_HEIGHT;
 
     uint8_t __far *vga = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
 #endif
 
-    for (int y=0; y<h; ++y) {
-        for (int x=0; x<w; ++x) {
-            vga[y*w+x] = VGA_BACKBUFFER[(y*200/h)*320 + x*320/w];
-        }
-    }
-
     if (ui) {
-        for (int y=0; y<SCREEN_HEIGHT; ++y) {
-            for (int x=0; x<SCREEN_WIDTH; ++x) {
-                unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
-                if (ch == 0xb2) {
-                    continue;
-                }
-                if (ch == 0xb0) {
+        for (long y=0; y<SCREEN_HEIGHT; ++y) {
+            for (long x=0; x<SCREEN_WIDTH; ++x) {
+                if (SCREEN_BUFFER[y*SCREEN_WIDTH+x][0] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][0] &&
+                        SCREEN_BUFFER[y*SCREEN_WIDTH+x][1] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][1]) {
                     continue;
                 }
 
+                unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
                 unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
 
                 unsigned char colors[2];
@@ -837,10 +832,15 @@ present(bool ui)
                     rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
                     rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
 
-                for (int row=0; row<6; ++row) {
-                    for (int column=0; column<4; ++column) {
-                        int yy = y*6+row;
-                        int xx = x*4+column;
+                for (uint16_t row=0; row<6; ++row) {
+                    for (uint16_t column=0; column<4; ++column) {
+                        uint16_t yy = y*6+row;
+                        uint16_t xx = x*4+column;
+
+                        if (ch == 0xb2 || ch == 0xb0) {
+                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER, xx, yy, w, h);
+                            continue;
+                        }
 
                         unsigned char color = (rows[row] >> (3-column)) & 1;
 
@@ -854,8 +854,13 @@ present(bool ui)
 #elif defined(VESAMENU)
                 for (int row=0; row<16; ++row) {
                     for (int column=0; column<8; ++column) {
-                        int yy = y*16+row;
-                        int xx = x*8+column;
+                        uint16_t yy = y*16+row;
+                        uint16_t xx = x*8+column;
+
+                        if (ch == 0xb2 || ch == 0xb0) {
+                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER, xx, yy, w, h);
+                            continue;
+                        }
 
                         unsigned char color = (FONT_8x16[ch*16+row] >> (8-column)) & 1;
 
@@ -871,7 +876,12 @@ present(bool ui)
         }
     }
 
+#if defined(VESAMENU)
     flipScreen();
+#endif
+
+   memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
+
 #else
     short __far *screen = (short __far *)MK_FP(0xb800ul, 0x0000ul);
     _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
@@ -1759,7 +1769,7 @@ struct PCXHeader {
 };
 
 static void
-vga_present_pcx(const char *filename, uint8_t *VGA, int palette_offset)
+vga_present_pcx(const char *filename, uint8_t __far *VGA, int palette_offset)
 {
     FILE *fp = fopen(filename, "rb");
     if (fp) {
@@ -1865,16 +1875,35 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
     }
 
     char filename[128];
+
+    bool backbuffer_changed = false;
+
+    static char current_backbuffer_filename[128];
     sprintf(filename, "pcx/%s/shot%d.pcx", game_name, current_idx);
-    vga_present_pcx(filename, VGA_BACKBUFFER, 0);
+    if (strcmp(filename, current_backbuffer_filename) != 0) {
+        vga_present_pcx(filename, VGA_BACKBUFFER, 0);
+        strcpy(current_backbuffer_filename, filename);
+        backbuffer_changed = true;
+    }
+
+    static char current_backbuffer_blur_filename[128];
     sprintf(filename, "pcx/%s/blur%d.pcx", game_name, current_idx);
-    vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, 64);
+    if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
+        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, 64);
+        strcpy(current_backbuffer_blur_filename, filename);
+        backbuffer_changed = true;
+    }
+
+    if (backbuffer_changed) {
+        // invalidate screen buffer to force a full-screen update
+        memset(SCREEN_BUFFER_OLD, 0, sizeof(SCREEN_BUFFER_OLD));
+    }
 }
 #endif
 
 int main(int argc, char *argv[])
 {
-#if defined(VGAMENU) || defined(VESAMENU)
+#if defined(DJGPP) && (defined(VGAMENU) || defined(VESAMENU))
     __djgpp_nearptr_enable();
 #endif
 

@@ -27,8 +27,8 @@ menu.exe: menu.c gamectlg.c
 	rm -f menu.o
 
 vgamenu.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ -DVGAMENU menu.c gamectlg.c -Os $(CFLAGS_VERSION) -Ivesa-dos-djgpp/src
-	i586-pc-msdosdjgpp-strip -s -x $@
+	owcc -o $@ $^ -mcmodel=t -DVGAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
+	rm -f menu.o
 
 vesamenu.exe: menu.c gamectlg.c
 	i586-pc-msdosdjgpp-gcc -o $@ -DVESAMENU menu.c gamectlg.c -Os $(CFLAGS_VERSION) -Ivesa-dos-djgpp/src
