@@ -1,3 +1,6 @@
+/* Real-mode VBE 1.x code by John Tsiombikas <nuclear@mutantstargoat.com>
+ * This code is released into the public domain, do whatever you want with it.
+ */
 #include <conio.h>
 #include <i86.h>
 #include "vbe.h"

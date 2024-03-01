@@ -1,3 +1,6 @@
+/* Real-mode VBE 1.x code by John Tsiombikas <nuclear@mutantstargoat.com>
+ * This code is released into the public domain, do whatever you want with it.
+ */
 #ifndef VBE_H_
 #define VBE_H_
 
