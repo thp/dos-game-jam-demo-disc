@@ -1,26 +1,17 @@
-#if defined(DJGPP)
-// http://www.delorie.com/djgpp/v2faq/faq17_7.html
-#include <sys/nearptr.h>
-#include <crt0.h>
-#define _fstrcmp strcmp
-#define _fstrcpy strcpy
-#define _fstrcat strcat
-#define _fmemcpy memcpy
-#define far
-#define __far
-void * MK_FP (unsigned short seg, unsigned short ofs)
-{
-if ( !(_crt0_startup_flags & _CRT0_FLAG_NEARPTR) )
-  if (!__djgpp_nearptr_enable ())
-    return (void *)0;
-return (void *) (seg*16 + ofs + __djgpp_conventional_base);
-}
-#include "types.h"
-#include "vesa.h"
-#include "vesa.c"
+#if defined(VESAMENU)
+#include <malloc.h>
+#include <i86.h>
+#include "vbe.h"
+#include "vbe.c"
 
-static VBESURFACE *
-vbesurface_ptr;
+struct vbe_info vbe;
+struct vbe_mode_info minf;
+
+/* huge framebuffer to extend over multiple segments */
+unsigned char huge *fb;
+long fbsize;
+long fb_winsz;
+long fb_winstep;
 #endif
 
 #include <stdio.h>
@@ -797,10 +788,10 @@ present(bool ui)
 #if defined(VGAMENU) || defined(VESAMENU)
 
 #if defined(VESAMENU)
-    uint32_t w = vbesurface_ptr->x_resolution;
-    uint32_t h = vbesurface_ptr->y_resolution;
+    uint32_t w = VESA_WIDTH;
+    uint32_t h = VESA_HEIGHT;
 
-    uint8_t __far *vga = (uint8_t *)vbesurface_ptr->offscreen_ptr;
+    uint8_t huge *vga = fb;
 #elif defined(VGAMENU)
     uint32_t w = VGA_WIDTH;
     uint32_t h = VGA_HEIGHT;
@@ -877,7 +868,21 @@ present(bool ui)
     }
 
 #if defined(VESAMENU)
-    flipScreen();
+    /* copy to video ram */
+    unsigned char huge *fbptr = fb;	/* fbptr needs to increment through multiple segments */
+    long sz = fbsize;
+    long winpos = 0;
+    while(sz > 0) {
+            unsigned char far *vmem = MK_FP(0xa000, 0); /* vmem does not, only 64k windows at a000h */
+            vbe_setwin(winpos);
+            for(long i=0; i<fb_winsz; i++) {
+                    *vmem++ = *fbptr++;
+            }
+            sz -= fb_winsz;
+            winpos += fb_winstep;
+    }
+
+    vbe_vsync();
 #endif
 
    memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
@@ -1903,10 +1908,6 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
 
 int main(int argc, char *argv[])
 {
-#if defined(DJGPP) && (defined(VGAMENU) || defined(VESAMENU))
-    __djgpp_nearptr_enable();
-#endif
-
     // Empty keyboard buffer
     while (kbhit()) {
         getch();
@@ -2015,7 +2016,42 @@ int main(int argc, char *argv[])
         int86(0x10, &inregs, &outregs);
     }
 #elif defined(VESAMENU)
-    vbesurface_ptr = VBEinit(VESA_WIDTH, VESA_HEIGHT, 8);
+    if(vbe_getinfo(&vbe) == -1) {
+        ipc_buffer->menu_mode = MENU_MODE_TEXT;
+        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+        textmode_reset();
+        exit(0);
+    }
+
+    if(vbe_getmodeinfo(0x101, &minf) == -1) {
+        ipc_buffer->menu_mode = MENU_MODE_TEXT;
+        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+        textmode_reset();
+        exit(0);
+    }
+
+    /* allocate main memory framebuffer and fill it with something */
+    fbsize = (long)VESA_WIDTH * (long)VESA_HEIGHT;
+    if(!(fb = halloc(fbsize, 1))) {
+        ipc_buffer->menu_mode = MENU_MODE_TEXT;
+        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+        textmode_reset();
+        exit(0);
+    }
+
+    /* calc window size in bytes and window stepping in granularity units */
+    fb_winsz = (unsigned long)minf.win_size << 10;
+    fb_winstep = 0;
+    long sz = 0;
+    while(sz < fb_winsz) {
+            fb_winstep++;
+            sz += (unsigned long)minf.win_gran << 10;
+    }
+
+
+    /* set video mode 640x480 8bpp */
+    vbe_setmode(0x101);
+
     display_adapter_type = DISPLAY_ADAPTER_VESA;
 #else
     configure_text_mode();
@@ -2194,7 +2230,8 @@ int main(int argc, char *argv[])
     fade_out();
 
 #if defined(VESAMENU)
-    VBEshutdown();
+    hfree(fb);
+    vbe_setmode(3);
 #endif
     textmode_reset();
 

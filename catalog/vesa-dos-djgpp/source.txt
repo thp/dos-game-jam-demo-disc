@@ -1,2 +1,0 @@
-by Tobias "Tobi" Koch
-https://github.com/tobijk/vesa-dos-djgpp
