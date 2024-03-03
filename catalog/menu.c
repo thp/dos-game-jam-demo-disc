@@ -908,11 +908,6 @@ present(bool ui)
     }
 #endif
 
-#if defined(VESAMENU)
-    // TODO: Also for VGA?
-    vbe_vsync();
-#endif
-
     memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
 
 #else
