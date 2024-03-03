@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <limits.h>
 #include <dos.h>
 #include <conio.h>
+#include <ctype.h>
 #include <sys/stat.h>
 #include <direct.h>
 #include "video.h"
@@ -151,6 +153,22 @@ static struct image *prev_image(struct image *img)
 	return prev;
 }
 
+static bool has_prefix_case_insensitive(const char *haystack, const char *prefix)
+{
+    int i;
+    if (strlen(haystack) < strlen(prefix)) {
+        return false;
+    }
+
+    for (i=0; prefix[i] != '\0'; ++i) {
+        if (tolower(haystack[i]) != tolower(prefix[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static struct image *open_imgdir(const char *dirname)
 {
 	DIR *dir;
@@ -167,6 +185,12 @@ static struct image *open_imgdir(const char *dirname)
 
 	while((dent = readdir(dir))) {
 		sprintf(fname, "%s/%s", dirname, dent->d_name);
+
+		/* Skip the "blur" versions of the files */
+		if (has_prefix_case_insensitive(dent->d_name, "blur")) {
+			continue;
+		}
+
 		if(stat(fname, &st) == -1 || (st.st_mode & S_IFMT) != S_IFREG) {
 			continue;	/* skip non-regular files */
 		}
