@@ -827,8 +827,21 @@ present(bool ui)
     if (ui) {
         for (long y=0; y<SCREEN_HEIGHT; ++y) {
             for (long x=0; x<SCREEN_WIDTH; ++x) {
+                int sx = x;
+                int sy = y;
+
+                /* "draw from the center of the screen to the edges" effect */
+                y = SCREEN_HEIGHT - 1 - y;
+                if (y % 2 != 0) {
+                    y = (SCREEN_HEIGHT - 1 - (y-1)/2);
+                } else {
+                    y /= 2;
+                }
+
                 if (SCREEN_BUFFER[y*SCREEN_WIDTH+x][0] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][0] &&
                         SCREEN_BUFFER[y*SCREEN_WIDTH+x][1] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][1]) {
+                    x = sx;
+                    y = sy;
                     continue;
                 }
 
@@ -888,6 +901,8 @@ present(bool ui)
                     }
                 }
 #endif
+                x = sx;
+                y = sy;
             }
         }
     }
