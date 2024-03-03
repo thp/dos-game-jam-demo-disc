@@ -1904,25 +1904,24 @@ show_screenshots(struct GameCatalog *cat, int game)
 
     bool backbuffer_changed = false;
 
-    palette_page = 1 - palette_page;
-
-    // a palette page takes up 2 image palettes (1 normal, 1 blurred)
-    int palette_page_offset = palette_page * (2 * MAX_IMAGE_COLORS);
-
     static char current_backbuffer_filename[128];
     sprintf(filename, "pcx/%s/shot%d.pcx", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_filename) != 0) {
-        vga_present_pcx(filename, VGA_BACKBUFFER, palette_page_offset);
+        vga_present_pcx(filename, VGA_BACKBUFFER, palette_page * (2 * MAX_IMAGE_COLORS));
         strcpy(current_backbuffer_filename, filename);
+        palette_page = 1 - palette_page;
         backbuffer_changed = true;
     }
 
     static char current_backbuffer_blur_filename[128];
     sprintf(filename, "pcx/%s/blur%d.pcx", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
-        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, palette_page_offset + MAX_IMAGE_COLORS);
+        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, palette_page * (2 * MAX_IMAGE_COLORS) + MAX_IMAGE_COLORS);
         strcpy(current_backbuffer_blur_filename, filename);
-        backbuffer_changed = true;
+        if (!backbuffer_changed) {
+            palette_page = 1 - palette_page;
+            backbuffer_changed = true;
+        }
     }
 
     if (backbuffer_changed) {
