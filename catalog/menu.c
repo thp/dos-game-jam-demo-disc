@@ -55,6 +55,9 @@ long fb_winstep;
 #include "font_8x16.h"
 #endif
 
+#define NUM_TEXTMODE_COLORS (16)
+#define MAX_IMAGE_COLORS (64)
+
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
 
@@ -710,6 +713,21 @@ static struct {
 
 static void (*set_palette_entry)(uint8_t, uint8_t, uint8_t, uint8_t) = NULL;
 
+static uint8_t
+palette[256*3];
+
+static bool
+palette_dirty = true;
+
+static void
+set_palette_entry_delayed(uint8_t idx, uint8_t r, uint8_t g, uint8_t b)
+{
+    palette[idx*3+0] = r;
+    palette[idx*3+1] = g;
+    palette[idx*3+2] = b;
+    palette_dirty = true;
+}
+
 static clock_t
 update_palette_last_time = 0;
 
@@ -734,7 +752,7 @@ update_palette()
     }
 
     if (set_palette_entry) {
-        for (int j=0; j<16; ++j) {
+        for (int j=0; j<NUM_TEXTMODE_COLORS; ++j) {
             uint8_t r = (uint16_t)DEFAULT_PALETTE[j].r * brightness / 255;
             uint8_t g = (uint16_t)DEFAULT_PALETTE[j].g * brightness / 255;
             uint8_t b = (uint16_t)DEFAULT_PALETTE[j].b * brightness / 255;
@@ -881,11 +899,23 @@ present(bool ui)
             sz -= fb_winsz;
             winpos += fb_winstep;
     }
+#endif
 
+    if (palette_dirty) {
+        // don't touch the first NUM_TEXTMODE_COLORS colors, as we set them directly;
+        // and only update 2 * MAX_IMAGE_COLORS (normal and blurred bg) colors max
+        for (int i=NUM_TEXTMODE_COLORS; i<NUM_TEXTMODE_COLORS+2*MAX_IMAGE_COLORS; ++i) {
+            set_palette_entry(i, palette[i*3+0], palette[i*3+1], palette[i*3+2]);
+        }
+        palette_dirty = false;
+    }
+
+#if defined(VESAMENU)
+    // TODO: Also for VGA?
     vbe_vsync();
 #endif
 
-   memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
+    memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
 
 #else
     short __far *screen = (short __far *)MK_FP(0xb800ul, 0x0000ul);
@@ -1812,11 +1842,10 @@ vga_present_pcx(const char *filename, uint8_t __far *VGA, int palette_offset)
             int len = 0;
             int pos = 0;
 
-#if !defined(VGAMENU) && !defined(VESAMENU)
-            for (int i=0; i<64; ++i) {
-                vga_set_palette_entry_direct(i+16+palette_offset, 0, 0, 0);
+            // black out the palette first
+            for (int i=0; i<MAX_IMAGE_COLORS; ++i) {
+                set_palette_entry(i+NUM_TEXTMODE_COLORS+palette_offset, 0, 0, 0);
             }
-#endif
 
             while (pixels_processed < (long)width * (long)height) {
                 if (pos == len) {
@@ -1835,22 +1864,22 @@ vga_present_pcx(const char *filename, uint8_t __far *VGA, int palette_offset)
                     ch = chunk[pos++];
 
                     for (int i=0; i<repeat; ++i) {
-                        VGA[pixels_processed++] = ch + 16 + palette_offset;
+                        VGA[pixels_processed++] = ch + NUM_TEXTMODE_COLORS + palette_offset;
                     }
                 } else {
-                    VGA[pixels_processed++] = ch + 16 + palette_offset;
+                    VGA[pixels_processed++] = ch + NUM_TEXTMODE_COLORS + palette_offset;
                 }
             }
 
             fseek(fp, -(768 + 1), SEEK_END);
             int ch = fgetc(fp);
             if (ch == 12) {
-                for (int i=0; i<64; ++i) {
+                for (int i=0; i<MAX_IMAGE_COLORS; ++i) {
                     int r = fgetc(fp);
                     int g = fgetc(fp);
                     int b = fgetc(fp);
 
-                    vga_set_palette_entry_direct(i+16+palette_offset, r, g, b);
+                    set_palette_entry_delayed(i+NUM_TEXTMODE_COLORS+palette_offset, r, g, b);
                 }
             } else {
                 // TODO: Error message (no palette)
@@ -1894,7 +1923,7 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
     static char current_backbuffer_blur_filename[128];
     sprintf(filename, "pcx/%s/blur%d.pcx", game_name, current_idx);
     if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
-        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, 64);
+        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, MAX_IMAGE_COLORS);
         strcpy(current_backbuffer_blur_filename, filename);
         backbuffer_changed = true;
     }
