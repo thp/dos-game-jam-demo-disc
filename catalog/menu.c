@@ -88,8 +88,11 @@ have_mouse_driver()
     return 0;
 }
 
+static int
+screenshot_idx = 0;
+
 static void
-show_screenshots(struct GameCatalog *cat, int game, int screenshot_idx);
+show_screenshots(struct GameCatalog *cat, int game);
 
 static void
 configure_text_mode();
@@ -268,7 +271,6 @@ struct ChoiceDialogState {
 
     int cursor;
     int offset;
-    int screenshot_idx;
 
     struct SearchState search;
 };
@@ -1233,10 +1235,10 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     if (state->search.now_searching) {
         if (ch == KEY_DOWN) {
             search_next(state);
-            state->screenshot_idx = 0;
+            screenshot_idx = 0;
         } else if (ch == KEY_UP) {
             search_previous(state);
-            state->screenshot_idx = 0;
+            screenshot_idx = 0;
         } else if (ch == KEY_ENTER || ch == KEY_ESCAPE || ch == KEY_F3) {
             if (ch == KEY_ESCAPE) {
                 // restore previous cursor and abort search
@@ -1285,35 +1287,37 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         } else {
             state->cursor += page_size;
         }
-        state->screenshot_idx = 0;
+        screenshot_idx = 0;
     } else if (ch == KEY_PPAGE) {
         if (state->cursor < page_size) {
             state->cursor = 0;
         } else {
             state->cursor -= page_size;
         }
-        state->screenshot_idx = 0;
+        screenshot_idx = 0;
     } else if (ch == KEY_HOME) {
         state->cursor = 0;
-        state->screenshot_idx = 0;
+        screenshot_idx = 0;
     } else if (ch == KEY_END) {
         state->cursor = n - 1;
-        state->screenshot_idx = 0;
+        screenshot_idx = 0;
     } else if (ch == KEY_DOWN) {
         if (state->cursor < n - 1) {
-            state->screenshot_idx = 0;
+            if (state->game == -1) {
+                screenshot_idx = 0;
+            }
             state->cursor += 1;
         }
     } else if (ch == KEY_LEFT) {
-        if (state->screenshot_idx > 0) {
-            state->screenshot_idx -= 1;
-        }
+        screenshot_idx--;
     } else if (ch == KEY_RIGHT) {
-        state->screenshot_idx++;
+        screenshot_idx++;
     } else if (ch == KEY_UP) {
         if (state->cursor > 0) {
             state->cursor -= 1;
-            state->screenshot_idx = 0;
+            if (state->game == -1) {
+                screenshot_idx = 0;
+            }
         }
     } else if (ch == KEY_ENTER) {
         return 1;
@@ -1362,12 +1366,12 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         while (1) {
             if (state->game != -1) {
                 // on a game page
-                show_screenshots(state->cat, state->game, state->screenshot_idx);
+                show_screenshots(state->cat, state->game);
             } else if (state->here && state->here->num_children && state->cursor > 0) {
                 // in a choice screen with a games list
-                show_screenshots(state->cat, state->here->children[state->cursor-1], state->screenshot_idx);
+                show_screenshots(state->cat, state->here->children[state->cursor-1]);
             } else {
-                show_screenshots(state->cat, -1, state->screenshot_idx);
+                show_screenshots(state->cat, -1);
             }
 
             present(false);
@@ -1382,11 +1386,9 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
                 // ESC to get out of screenshot mode
                 break;
             } else if (ch == KEY_LEFT) {
-                if (state->screenshot_idx > 0) {
-                    state->screenshot_idx -= 1;
-                }
+                screenshot_idx--;
             } else if (ch == KEY_RIGHT) {
-                state->screenshot_idx++;
+                screenshot_idx++;
             }
         }
 #else
@@ -1407,7 +1409,9 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 #endif
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;
-        state->screenshot_idx = 0;
+        if (state->game == -1) {
+            screenshot_idx = 0;
+        }
         return 1;
     }
 
@@ -1456,13 +1460,13 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
 #if defined(VGAMENU) || defined(VESAMENU)
         if (state->game != -1) {
             // on a game page
-            show_screenshots(state->cat, state->game, state->screenshot_idx);
+            show_screenshots(state->cat, state->game);
         } else if (state->here && state->here->num_children && state->cursor > 0) {
             // in a choice screen with a games list
-            show_screenshots(state->cat, state->here->children[state->cursor-1], state->screenshot_idx);
+            show_screenshots(state->cat, state->here->children[state->cursor-1]);
         } else {
             // default
-            show_screenshots(state->cat, -1, state->screenshot_idx);
+            show_screenshots(state->cat, -1);
         }
 #endif
 
@@ -1719,7 +1723,6 @@ render_group_background(void *user_data)
     cds.game = -1;
     cds.cursor = ud->here->cursor_index;
     cds.offset = ud->here->scroll_offset;
-    cds.screenshot_idx = 0;
 
     const char *frame_label = ud->cat->strings->d[ud->here->title_idx];
 
@@ -1888,15 +1891,18 @@ vga_present_pcx(const char *filename, uint8_t __far *VGA, int palette_offset)
 
 #if defined(VGAMENU) || defined(VESAMENU)
 static void
-show_screenshots(struct GameCatalog *cat, int game, int current_idx)
+show_screenshots(struct GameCatalog *cat, int game)
 {
     const char *game_name = "default";
 
     if (game != -1 && cat->games[game].num_screenshots > 0) {
         game_name = cat->ids->d[game];
-        current_idx %= cat->games[game].num_screenshots;
+        if (screenshot_idx < 0) {
+            screenshot_idx += cat->games[game].num_screenshots;
+        }
+        screenshot_idx %= cat->games[game].num_screenshots;
     } else {
-        current_idx %= 2; // FIXME: Hardcoded
+        screenshot_idx = 0; // FIXME: Hardcoded
     }
 
     char filename[128];
@@ -1909,7 +1915,7 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
     int palette_page_offset = palette_page * (2 * MAX_IMAGE_COLORS);
 
     static char current_backbuffer_filename[128];
-    sprintf(filename, "pcx/%s/shot%d.pcx", game_name, current_idx);
+    sprintf(filename, "pcx/%s/shot%d.pcx", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_filename) != 0) {
         vga_present_pcx(filename, VGA_BACKBUFFER, palette_page_offset);
         strcpy(current_backbuffer_filename, filename);
@@ -1917,7 +1923,7 @@ show_screenshots(struct GameCatalog *cat, int game, int current_idx)
     }
 
     static char current_backbuffer_blur_filename[128];
-    sprintf(filename, "pcx/%s/blur%d.pcx", game_name, current_idx);
+    sprintf(filename, "pcx/%s/blur%d.pcx", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
         vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, palette_page_offset + MAX_IMAGE_COLORS);
         strcpy(current_backbuffer_blur_filename, filename);
@@ -2137,7 +2143,6 @@ int main(int argc, char *argv[])
             cds.game = game;
             cds.cursor = 0;
             cds.offset = 0;
-            cds.screenshot_idx = 0;
 
             struct GameLaunchChoices glc;
             memset(&glc, 0, sizeof(glc));
@@ -2203,7 +2208,6 @@ int main(int argc, char *argv[])
             cds.game = game;
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
-            cds.screenshot_idx = 0;
 
 #if defined(VGAMENU) || defined(VESAMENU)
             int selection = choice_dialog(2, 20, buf, &cds, max + 1,
