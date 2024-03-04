@@ -826,26 +826,66 @@ present(bool ui)
 
     if (ui) {
         for (long y=0; y<SCREEN_HEIGHT; ++y) {
+            int sy = y;
+
+            /* "draw from the center of the screen to the edges" effect */
+            y = SCREEN_HEIGHT - 1 - y;
+            if (y % 2 != 0) {
+                y = (SCREEN_HEIGHT - 1 - (y-1)/2);
+            } else {
+                y /= 2;
+            }
+
             for (long x=0; x<SCREEN_WIDTH; ++x) {
-                int sx = x;
-                int sy = y;
-
-                /* "draw from the center of the screen to the edges" effect */
-                y = SCREEN_HEIGHT - 1 - y;
-                if (y % 2 != 0) {
-                    y = (SCREEN_HEIGHT - 1 - (y-1)/2);
-                } else {
-                    y /= 2;
-                }
-
                 if (SCREEN_BUFFER[y*SCREEN_WIDTH+x][0] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][0] &&
                         SCREEN_BUFFER[y*SCREEN_WIDTH+x][1] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][1]) {
-                    x = sx;
-                    y = sy;
                     continue;
                 }
 
                 unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
+
+#if defined(VGAMENU)
+                if (ch == 0xb2 || ch == 0xb0 || ch == ' ') {
+                    unsigned char was_space = (ch == ' ');
+
+                    int x_end = x + 1;
+                    while (x_end < SCREEN_WIDTH) {
+                        ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x_end][0];
+
+                        if (was_space && ch != ' ') {
+                            break;
+                        }
+
+                        if (!was_space && ch != 0xb2 && ch != 0xb0) {
+                            break;
+                        }
+
+                        x_end++;
+                    }
+
+                    uint8_t columns = x_end - x;
+                    uint32_t off = y * 480 + x;
+
+                    uint32_t far *vga32 = ((uint32_t far *)vga);
+                    uint32_t far *src32 = ((uint32_t far *)(was_space ? VGA_BACKBUFFER_BLUR : VGA_BACKBUFFER));
+
+                    vga32 += off;
+                    src32 += off;
+
+                    uint8_t scanline = 80 - columns;
+                    for (uint8_t row=0; row<6; ++row) {
+                        for (uint8_t column=0; column<columns; ++column) {
+                            *vga32++ = *src32++;
+                        }
+                        vga32 += scanline;
+                        src32 += scanline;
+                    }
+
+                    x = x_end - 1;
+                    continue;
+                }
+#endif
+
                 unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
 
                 unsigned char colors[2];
@@ -861,24 +901,21 @@ present(bool ui)
                     rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
                     rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
 
+                uint32_t yy = y*1920ul;
                 for (uint16_t row=0; row<6; ++row) {
                     for (uint16_t column=0; column<4; ++column) {
-                        uint16_t yy = y*6+row;
-                        uint16_t xx = x*4+column;
-
-                        if (ch == 0xb2 || ch == 0xb0) {
-                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER, xx, yy, w, h);
-                            continue;
-                        }
+                        uint32_t xx = yy+x*4+column;
 
                         unsigned char color = (rows[row] >> (3-column)) & 1;
 
                         if (color == 0) {
-                            vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER_BLUR, xx, yy, w, h);
+                            vga[xx] = VGA_BACKBUFFER_BLUR[xx];
                         } else {
-                            vga[yy*w+xx] = colors[color];
+                            vga[xx] = colors[color];
                         }
                     }
+
+                    yy += 320ul;
                 }
 #elif defined(VESAMENU)
                 for (int row=0; row<16; ++row) {
@@ -901,9 +938,9 @@ present(bool ui)
                     }
                 }
 #endif
-                x = sx;
-                y = sy;
             }
+
+            y = sy;
         }
     }
 
@@ -1813,89 +1850,37 @@ struct PCXHeader {
 };
 
 static void
-vga_present_pcx(const char *filename, uint8_t __far *VGA, int palette_offset)
+vga_load_dat(const char *filename, uint8_t __far *VGA, int palette_offset)
 {
+    palette_offset += NUM_TEXTMODE_COLORS;
+
+    uint8_t buf[320];
+
     FILE *fp = fopen(filename, "rb");
     if (fp) {
-        struct PCXHeader header;
-        size_t res = fread(&header, sizeof(header), 1, fp);
-        if (res == 1) {
-            int width = (header.max_x - header.min_x + 1);
-            int height = (header.max_y - header.min_y + 1);
+        uint8_t far *out = VGA;
+        for (long y=0; y<200; ++y) {
+            fread(buf, 320, 1, fp);
 
-            if (header.header_field == 0x0a &&
-                    header.version == 5 &&
-                    header.encoding == 1 &&
-                    header.bpp == 8 &&
-                    header.num_planes == 1 &&
-                    header.stride_bytes == 320 &&
-                    header.palette_mode == 1 &&
-                    width == 320 &&
-                    height == 200) {
-            } else {
-                printf("Error, unsupported format:\n");
-                printf("hdr: 0x%04x\n", header.header_field);
-                printf("version: %d\n", header.version);
-                printf("encoding: %d\n", header.encoding);
-                printf("bpp: %d\n", header.bpp);
-                printf("res: [%d, %d]-[%d, %d]\n", header.min_x, header.min_y, header.max_x, header.max_y);
-                printf("num planes: %d\n", header.num_planes);
-                printf("stride_bytes: %d\n", header.stride_bytes);
-                printf("palette_mode: %d\n", header.palette_mode);
-                printf("resolution: [%d, %d]\n", header.x_resolution, header.y_resolution);
+            for (int i=0; i<320; ++i) {
+                buf[i] += palette_offset;
             }
 
-            long pixels_processed = 0;
-
-            static uint8_t chunk[512];
-            int len = 0;
-            int pos = 0;
-
-            while (pixels_processed < (long)width * (long)height) {
-                if (pos == len) {
-                    pos = 0;
-                    len = fread(chunk, 1, sizeof(chunk), fp);
-                }
-                uint8_t ch = chunk[pos++];
-
-                if ((ch & 0xc0) == 0xc0) {
-                    uint8_t repeat = ch & 0x3f;
-
-                    if (pos == len) {
-                        pos = 0;
-                        len = fread(chunk, 1, sizeof(chunk), fp);
-                    }
-                    ch = chunk[pos++];
-
-                    for (int i=0; i<repeat; ++i) {
-                        VGA[pixels_processed++] = ch + NUM_TEXTMODE_COLORS + palette_offset;
-                    }
-                } else {
-                    VGA[pixels_processed++] = ch + NUM_TEXTMODE_COLORS + palette_offset;
-                }
-            }
-
-            fseek(fp, -(768 + 1), SEEK_END);
-            int ch = fgetc(fp);
-            if (ch == 12) {
-                for (int i=0; i<MAX_IMAGE_COLORS; ++i) {
-                    int r = fgetc(fp);
-                    int g = fgetc(fp);
-                    int b = fgetc(fp);
-
-                    set_palette_entry(i+NUM_TEXTMODE_COLORS+palette_offset, r, g, b);
-                }
-            } else {
-                // TODO: Error message (no palette)
-            }
-        } else {
-            printf("Error reading file\n");
+            _fmemcpy(out, buf, 320);
+            out += 320;
         }
 
+        fread(buf, 3*60, 1, fp);
         fclose(fp);
-    } else {
-        //printf("Cannot open %s\n", filename);
-        //printf("Press ESC to go back to menu.\n");
+
+        uint8_t *read = buf;
+        for (int i=0; i<MAX_IMAGE_COLORS; ++i) {
+            int r = *read++;
+            int g = *read++;
+            int b = *read++;
+
+            set_palette_entry(i+palette_offset, r, g, b);
+        }
     }
 }
 
@@ -1920,18 +1905,18 @@ show_screenshots(struct GameCatalog *cat, int game)
     bool backbuffer_changed = false;
 
     static char current_backbuffer_filename[128];
-    sprintf(filename, "pcx/%s/shot%d.pcx", game_name, screenshot_idx);
+    sprintf(filename, "pcx/%s/shot%d.dat", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_filename) != 0) {
-        vga_present_pcx(filename, VGA_BACKBUFFER, palette_page * (2 * MAX_IMAGE_COLORS));
+        vga_load_dat(filename, VGA_BACKBUFFER, palette_page * (2 * MAX_IMAGE_COLORS));
         strcpy(current_backbuffer_filename, filename);
         palette_page = 1 - palette_page;
         backbuffer_changed = true;
     }
 
     static char current_backbuffer_blur_filename[128];
-    sprintf(filename, "pcx/%s/blur%d.pcx", game_name, screenshot_idx);
+    sprintf(filename, "pcx/%s/blur%d.dat", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
-        vga_present_pcx(filename, VGA_BACKBUFFER_BLUR, palette_page * (2 * MAX_IMAGE_COLORS) + MAX_IMAGE_COLORS);
+        vga_load_dat(filename, VGA_BACKBUFFER_BLUR, palette_page * (2 * MAX_IMAGE_COLORS) + MAX_IMAGE_COLORS);
         strcpy(current_backbuffer_blur_filename, filename);
         if (!backbuffer_changed) {
             palette_page = 1 - palette_page;

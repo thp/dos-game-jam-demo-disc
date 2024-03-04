@@ -23,15 +23,15 @@ pcatalog: pcatalog.c gamectlg.c
 	$(CC) -o $@ $^
 
 menu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
+	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
 	rm -f menu.o
 
 vgamenu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -DVGAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
+	owcc -o $@ $^ -mcmodel=t -DVGAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
 	rm -f menu.o
 
 vesamenu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -DVESAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION)
+	owcc -o $@ $^ -mcmodel=t -DVESAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
 	rm -f menu.o
 
 start.exe: start.c chain.o
