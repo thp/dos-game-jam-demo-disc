@@ -1,4 +1,4 @@
-TARGETS := gamectlg.dat vgamenu.exe menu.exe start.exe vesamenu.exe viewshot.exe vgamnu32.exe vesamn32.exe
+TARGETS := gamectlg.dat menu.exe menu32.exe start.exe viewshot.exe
 
 default: $(TARGETS)
 
@@ -26,20 +26,8 @@ menu.exe: menu.c gamectlg.c
 	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
 	rm -f menu.o
 
-vgamenu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -DVGAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
-	rm -f menu.o
-
-vesamenu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -DVESAMENU -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
-	rm -f menu.o
-
-vgamnu32.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ -DVGAMENU menu.c gamectlg.c -O2 $(CFLAGS_VERSION)
-	i586-pc-msdosdjgpp-strip -s -x $@
-
-vesamn32.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ -DVESAMENU menu.c gamectlg.c -O2 $(CFLAGS_VERSION)
+menu32.exe: menu.c gamectlg.c
+	i586-pc-msdosdjgpp-gcc -o $@ menu.c gamectlg.c -O2 $(CFLAGS_VERSION)
 	i586-pc-msdosdjgpp-strip -s -x $@
 
 start.exe: start.c chain.o

@@ -12,7 +12,7 @@ DISPLAY_ADAPTER_NAMES[] = {
     "CGA",
     "EGA",
     "VGA",
-    "VESA",
+    "SVGA",
 };
 
 static enum DisplayAdapter

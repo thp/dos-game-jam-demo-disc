@@ -6,6 +6,7 @@
 #define _fstrcpy strcpy
 #define _fstrcat strcat
 #define _fmemcpy memcpy
+#define _fmalloc malloc
 #define far
 #define __far
 #define _Packed __attribute__((packed))
@@ -22,14 +23,6 @@ return (void *) (seg*16 + ofs + __djgpp_conventional_base);
 #endif
 
 
-#if defined(VESAMENU)
-#include <malloc.h>
-
-#if defined(DJGPP)
-#include <dos.h>
-#else
-#include <i86.h>
-#endif
 
 #include "vbe.h"
 #include "vbe.c"
@@ -42,7 +35,6 @@ unsigned char huge *fb;
 long fbsize;
 long fb_winsz;
 long fb_winstep;
-#endif
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -50,6 +42,11 @@ long fb_winstep;
 #include <string.h>
 #include <ctype.h>
 #include <strings.h>
+#include <malloc.h>
+
+#if !defined(DJGPP)
+#include <i86.h>
+#endif
 
 #include <dos.h>
 #include <time.h>
@@ -77,13 +74,8 @@ long fb_winstep;
 #include "cpuutil.h"
 #include "emuutil.h"
 
-#if defined(VGAMENU)
 #include "vgafont.h"
-#endif
-
-#if defined(VESAMENU)
 #include "font_8x16.h"
-#endif
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
@@ -127,32 +119,42 @@ show_screenshots(struct GameCatalog *cat, int game);
 static void
 configure_text_mode();
 
-#if defined(VGAMENU)
-#  define VGA_WIDTH (320)
-#  define VGA_HEIGHT (200)
-#  define SCREEN_WIDTH (VGA_WIDTH / 4)
-#  define SCREEN_HEIGHT (VGA_HEIGHT / 6)
-#elif defined(VESAMENU)
-#  define VESA_WIDTH (640)
-#  define VESA_HEIGHT (480)
-#  define SCREEN_WIDTH (VESA_WIDTH / 8)
-#  define SCREEN_HEIGHT (VESA_HEIGHT / 16)
-#else
-#  define SCREEN_WIDTH (80)
-#  define SCREEN_HEIGHT (25)
-#endif
+#define VGA_WIDTH (320)
+#define VGA_HEIGHT (200)
+#define VGA_SCREEN_WIDTH (VGA_WIDTH / 4)
+#define VGA_SCREEN_HEIGHT (VGA_HEIGHT / 6) // 33 (+ 2 extra scanlines we just blit)
+
+#define VESA_WIDTH (640)
+#define VESA_HEIGHT (480)
+#define VESA_SCREEN_WIDTH (VESA_WIDTH / 8)
+#define VESA_SCREEN_HEIGHT (VESA_HEIGHT / 16) // 30
+
+#define TEXT_SCREEN_WIDTH (80)
+#define TEXT_SCREEN_HEIGHT (25)
+
+// always 80 chars wide
+#define SCREEN_WIDTH (80)
+
+// reserve space for the tallest screen height
+#define SCREEN_HEIGHT_MAX (VGA_SCREEN_HEIGHT)
+
+static uint16_t
+SCREEN_HEIGHT = TEXT_SCREEN_HEIGHT;
 
 static uint8_t
-SCREEN_BUFFER[SCREEN_WIDTH*SCREEN_HEIGHT][2];
+SCREEN_BUFFER[SCREEN_WIDTH*SCREEN_HEIGHT_MAX][2];
 
 static uint8_t
-SCREEN_BUFFER_OLD[SCREEN_WIDTH*SCREEN_HEIGHT][2];
+SCREEN_BUFFER_OLD[SCREEN_WIDTH*SCREEN_HEIGHT_MAX][2];
 
 static int16_t
 screen_x = 0;
 
 static int16_t
 screen_y = 0;
+
+static enum MenuMode
+ui_mode = MENU_MODE_TEXT;
 
 static uint8_t
     COLOR_DEFAULT_FG = 0,
@@ -179,11 +181,7 @@ static uint8_t
 
     // frame label
     COLOR_FRAME_LABEL_BG = 0,
-#if defined(VGAMENU) || defined(VESAMENU)
-    COLOR_FRAME_LABEL_FG = 3 + 8,
-#else
-    COLOR_FRAME_LABEL_FG = 0xf,
-#endif
+#define COLOR_FRAME_LABEL_FG ((ui_mode == MENU_MODE_TEXT) ? 0xf : (3 + 8))
 
     // hotkey bar
     COLOR_HOTKEY_BG = 0,
@@ -212,11 +210,7 @@ static uint8_t
 screen_attr = 7;
 
 static int32_t
-#if defined(VGAMENU) || defined(VESAMENU)
-brightness = 255;
-#else
 brightness = 0;
-#endif
 
 static int
 brightness_up_down = 1;
@@ -358,22 +352,29 @@ void draw_statusbar(const char *search_string)
     screen_x = 2;
 
     static const struct HotKey
-    KEYS[] = {
+    TEXT_KEYS[] = {
         { "ESC", "Back" },
-#if !defined(VGAMENU) && !defined(VESAMENU)
         { "F2", "Color Theme" },
-#endif
         { "F3", "Search" },
-#if defined(VGAMENU) || defined(VESAMENU)
-        { "F4", "Hide UI" },
-        { "L/R", "Screenshots" },
-#else
         { "F4", "Screenshots" },
-#endif
         // TODO: Could hide "Video mode" on CGA/EGA
         { "F5", "Video Mode" },
         { NULL, NULL },
     };
+
+    static const struct HotKey
+    GFX_KEYS[] = {
+        { "ESC", "Back" },
+        { "F3", "Search" },
+        { "F4", "Hide UI" },
+        { "L/R", "Screenshots" },
+        // TODO: Could hide "Video mode" on CGA/EGA
+        { "F5", "Video Mode" },
+        { NULL, NULL },
+    };
+
+    const struct HotKey *
+    KEYS = (ui_mode == MENU_MODE_TEXT) ? TEXT_KEYS : GFX_KEYS;
 
     static const struct HotKey
     SEARCH_KEYS[] = {
@@ -820,10 +821,8 @@ update_palette()
     }
 }
 
-#if defined(VGAMENU) || defined(VESAMENU)
-static uint8_t __far VGA_BACKBUFFER[320L*200L];
-static uint8_t __far VGA_BACKBUFFER_BLUR[320L*200L];
-#endif
+static uint8_t far VGA_BACKBUFFER[320L*200L];
+static uint8_t far VGA_BACKBUFFER_BLUR[320L*200L];
 
 static inline uint8_t
 sample_320_200(const uint8_t __far *backbuffer, long x, long y, long w, long h)
@@ -832,27 +831,17 @@ sample_320_200(const uint8_t __far *backbuffer, long x, long y, long w, long h)
 }
 
 static void
-present(bool ui)
+present_vga(bool ui)
 {
-    // wait for vertical retrace before copying
-    while ((inp(0x3DA) & 8) != 0);
-    while ((inp(0x3DA) & 8) == 0);
-
-    update_palette();
-
-#if defined(VGAMENU) || defined(VESAMENU)
-
-#if defined(VESAMENU)
-    uint32_t w = VESA_WIDTH;
-    uint32_t h = VESA_HEIGHT;
-
-    uint8_t huge *vga = fb;
-#elif defined(VGAMENU)
     uint32_t w = VGA_WIDTH;
     uint32_t h = VGA_HEIGHT;
 
     uint8_t __far *vga = (uint8_t __far *)MK_FP(0xa000ul, 0x0000ul);
-#endif
+
+    // VGA mode has 33 * 6 = 198 scanlines used, so fill 2 scanlines
+    // with the VGA blurred image directly
+    int tail_rows = 2;
+    _fmemcpy(vga + 320L*(200L-tail_rows), VGA_BACKBUFFER + 320L*(200L-tail_rows), w*tail_rows);
 
     if (ui) {
         for (long y=0; y<SCREEN_HEIGHT; ++y) {
@@ -874,7 +863,126 @@ present(bool ui)
 
                 unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
 
-#if defined(VGAMENU)
+                if (ch == 0xb2 || ch == 0xb0 || ch == ' ') {
+                    unsigned char was_space = (ch == ' ');
+
+                    int x_end = x + 1;
+                    while (x_end < SCREEN_WIDTH) {
+                        ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x_end][0];
+
+                        if (was_space && ch != ' ') {
+                            break;
+                        }
+
+                        if (!was_space && ch != 0xb2 && ch != 0xb0) {
+                            break;
+                        }
+
+                        x_end++;
+                    }
+
+                    uint8_t columns = x_end - x;
+                    uint32_t off = y * 480 + x;
+
+                    uint32_t far *vga32 = ((uint32_t far *)vga);
+                    uint32_t far *src32 = ((uint32_t far *)(was_space ? VGA_BACKBUFFER_BLUR : VGA_BACKBUFFER));
+
+                    vga32 += off;
+                    src32 += off;
+
+                    uint8_t scanline = 80 - columns;
+                    for (uint8_t row=0; row<6; ++row) {
+                        for (uint8_t column=0; column<columns; ++column) {
+                            *vga32++ = *src32++;
+                        }
+                        vga32 += scanline;
+                        src32 += scanline;
+                    }
+
+                    x = x_end - 1;
+                    continue;
+                }
+
+                unsigned char attr = SCREEN_BUFFER[y*SCREEN_WIDTH+x][1];
+
+                unsigned char colors[2];
+                    colors[0]=(attr >> 4) & 0x0F;
+                    colors[1]=(attr >> 0) & 0x0F;
+
+                unsigned char rows[6];
+                    rows[0]=(VGAFONT[ch*3+0] >> 0) & 0x0F;
+                    rows[1]=(VGAFONT[ch*3+0] >> 4) & 0x0F;
+                    rows[2]=(VGAFONT[ch*3+1] >> 0) & 0x0F;
+                    rows[3]=(VGAFONT[ch*3+1] >> 4) & 0x0F;
+                    rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
+                    rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
+
+                uint32_t yy = y*1920ul;
+                for (uint16_t row=0; row<6; ++row) {
+                    for (uint16_t column=0; column<4; ++column) {
+                        uint32_t xx = yy+x*4+column;
+
+                        unsigned char color = (rows[row] >> (3-column)) & 1;
+
+                        if (color == 0) {
+                            vga[xx] = VGA_BACKBUFFER_BLUR[xx];
+                        } else {
+                            vga[xx] = colors[color];
+                        }
+                    }
+
+                    yy += 320ul;
+                }
+            }
+
+            y = sy;
+        }
+
+        memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
+    } else {
+        _fmemcpy(vga, VGA_BACKBUFFER, w*h);
+
+        // invalidate screen buffer to redraw the UI again later
+        for (uint16_t i=0; i<sizeof(SCREEN_BUFFER_OLD)/sizeof(SCREEN_BUFFER_OLD[0]); ++i) {
+            int ch = SCREEN_BUFFER_OLD[i][0];
+
+            // background doesn't need to be invalidated
+            if (ch != 0xb2 && ch != 0xb0) {
+                SCREEN_BUFFER_OLD[i][1] = 0;
+            }
+        }
+    }
+}
+
+static void
+present_vesa(bool ui)
+{
+    uint32_t w = VESA_WIDTH;
+    uint32_t h = VESA_HEIGHT;
+
+    uint8_t huge *vga = fb;
+
+    if (ui) {
+        for (long y=0; y<SCREEN_HEIGHT; ++y) {
+            int sy = y;
+
+            /* "draw from the center of the screen to the edges" effect */
+            y = SCREEN_HEIGHT - 1 - y;
+            if (y % 2 != 0) {
+                y = (SCREEN_HEIGHT - 1 - (y-1)/2);
+            } else {
+                y /= 2;
+            }
+
+            for (long x=0; x<SCREEN_WIDTH; ++x) {
+                if (SCREEN_BUFFER[y*SCREEN_WIDTH+x][0] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][0] &&
+                        SCREEN_BUFFER[y*SCREEN_WIDTH+x][1] == SCREEN_BUFFER_OLD[y*SCREEN_WIDTH+x][1]) {
+                    continue;
+                }
+
+                unsigned char ch = SCREEN_BUFFER[y*SCREEN_WIDTH+x][0];
+
+#if 0 /* TODO: Make this work for VESA */
                 if (ch == 0xb2 || ch == 0xb0 || ch == ' ') {
                     unsigned char was_space = (ch == ' ');
 
@@ -922,38 +1030,13 @@ present(bool ui)
                     colors[0]=(attr >> 4) & 0x0F;
                     colors[1]=(attr >> 0) & 0x0F;
 
-#if defined(VGAMENU)
-                unsigned char rows[6];
-                    rows[0]=(VGAFONT[ch*3+0] >> 0) & 0x0F;
-                    rows[1]=(VGAFONT[ch*3+0] >> 4) & 0x0F;
-                    rows[2]=(VGAFONT[ch*3+1] >> 0) & 0x0F;
-                    rows[3]=(VGAFONT[ch*3+1] >> 4) & 0x0F;
-                    rows[4]=(VGAFONT[ch*3+2] >> 0) & 0x0F;
-                    rows[5]=(VGAFONT[ch*3+2] >> 4) & 0x0F;
-
-                uint32_t yy = y*1920ul;
-                for (uint16_t row=0; row<6; ++row) {
-                    for (uint16_t column=0; column<4; ++column) {
-                        uint32_t xx = yy+x*4+column;
-
-                        unsigned char color = (rows[row] >> (3-column)) & 1;
-
-                        if (color == 0) {
-                            vga[xx] = VGA_BACKBUFFER_BLUR[xx];
-                        } else {
-                            vga[xx] = colors[color];
-                        }
-                    }
-
-                    yy += 320ul;
-                }
-#elif defined(VESAMENU)
                 for (int row=0; row<16; ++row) {
                     for (int column=0; column<8; ++column) {
                         uint16_t yy = y*16+row;
                         uint16_t xx = x*8+column;
 
                         if (ch == 0xb2 || ch == 0xb0) {
+                            // TODO: Move out of the loop
                             vga[yy*w+xx] = sample_320_200(VGA_BACKBUFFER, xx, yy, w, h);
                             continue;
                         }
@@ -967,14 +1050,14 @@ present(bool ui)
                         }
                     }
                 }
-#endif
             }
 
             y = sy;
         }
+    } else {
+        // TODO
     }
 
-#if defined(VESAMENU)
     /* copy to video ram */
     unsigned char huge *fbptr = fb;	/* fbptr needs to increment through multiple segments */
     long sz = fbsize;
@@ -988,14 +1071,33 @@ present(bool ui)
             sz -= fb_winsz;
             winpos += fb_winstep;
     }
-#endif
 
     memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
+}
 
-#else
+static void
+present_text(bool ui)
+{
     short __far *screen = (short __far *)MK_FP(0xb800ul, 0x0000ul);
-    _fmemcpy(screen, SCREEN_BUFFER, sizeof(SCREEN_BUFFER));
-#endif
+    _fmemcpy(screen, SCREEN_BUFFER, TEXT_SCREEN_WIDTH*TEXT_SCREEN_HEIGHT*2);
+}
+
+static void
+present(bool ui)
+{
+    // wait for vertical retrace before copying
+    while ((inp(0x3DA) & 8) != 0);
+    while ((inp(0x3DA) & 8) == 0);
+
+    update_palette();
+
+    if (ui_mode == MENU_MODE_TEXT) {
+        present_text(ui);
+    } else if (ui_mode == MENU_MODE_VGA) {
+        present_vga(ui);
+    } else if (ui_mode == MENU_MODE_VESA) {
+        present_vesa(ui);
+    }
 }
 
 static int
@@ -1048,7 +1150,9 @@ choice_dialog_measure(int n,
         }
     }
 
-    *out_height = height;
+    if (out_height) {
+        *out_height = height;
+    }
 
     return width + 1;
 }
@@ -1057,73 +1161,73 @@ choice_dialog_measure(int n,
 static void
 generate_random_palette()
 {
-#if defined(VGAMENU) || defined(VESAMENU)
-    // first, generate background/disabled colors
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + 0;
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + 20;
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + 80;
+    if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+        // first, generate background/disabled colors
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + 0;
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + 20;
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + 80;
 
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
 
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
 
-    // then, generate a sane sub-palette
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 150;
+        // then, generate a sane sub-palette
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 150;
 
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = 250;
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = 250;
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = 250;
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = 250;
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = 250;
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = 250;
 
-    DEFAULT_PALETTE[COLOR_DARK_BG].r = 230;
-    DEFAULT_PALETTE[COLOR_DARK_BG].g = 230;
-    DEFAULT_PALETTE[COLOR_DARK_BG].b = 230;
+        DEFAULT_PALETTE[COLOR_DARK_BG].r = 230;
+        DEFAULT_PALETTE[COLOR_DARK_BG].g = 230;
+        DEFAULT_PALETTE[COLOR_DARK_BG].b = 230;
 
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = 150;
-#else
-    // first, generate background/disabled colors
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + rand() % 200;
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + rand() % 200;
-    DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + rand() % 200;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = 150;
+    } else {
+        // first, generate background/disabled colors
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].r = 100 + rand() % 200;
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].g = 100 + rand() % 200;
+        DEFAULT_PALETTE[COLOR_DISABLED_BG].b = 100 + rand() % 200;
 
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
-    DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/2;
+        DEFAULT_PALETTE[COLOR_DISABLED_SOFT_CONTRAST].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/2;
 
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
-    DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].r = DEFAULT_PALETTE[COLOR_DISABLED_BG].r/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].g = DEFAULT_PALETTE[COLOR_DISABLED_BG].g/4;
+        DEFAULT_PALETTE[COLOR_DISABLED_FG].b = DEFAULT_PALETTE[COLOR_DISABLED_BG].b/4;
 
-    // then, generate a sane sub-palette
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 50 + rand() % 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 50 + rand() % 150;
-    DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 50 + rand() % 150;
+        // then, generate a sane sub-palette
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].r = 50 + rand() % 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].g = 50 + rand() % 150;
+        DEFAULT_PALETTE[COLOR_DEFAULT_BG].b = 50 + rand() % 150;
 
 #define BRIGHTER(x) (255 - ((255 - (x)) / 3))
 #define DARKER(x) ((x) / 3)
 
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
-    DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].r = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].g = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
+        DEFAULT_PALETTE[COLOR_BRIGHT_BG].b = BRIGHTER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
 
-    DEFAULT_PALETTE[COLOR_DARK_BG].r = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
-    DEFAULT_PALETTE[COLOR_DARK_BG].g = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
-    DEFAULT_PALETTE[COLOR_DARK_BG].b = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
+        DEFAULT_PALETTE[COLOR_DARK_BG].r = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].r);
+        DEFAULT_PALETTE[COLOR_DARK_BG].g = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].g);
+        DEFAULT_PALETTE[COLOR_DARK_BG].b = DARKER(DEFAULT_PALETTE[COLOR_DEFAULT_BG].b);
 
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = DEFAULT_PALETTE[COLOR_DEFAULT_BG].r / 3;
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = DEFAULT_PALETTE[COLOR_DEFAULT_BG].g / 3;
-    DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = DEFAULT_PALETTE[COLOR_DEFAULT_BG].b / 3;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].r = DEFAULT_PALETTE[COLOR_DEFAULT_BG].r / 3;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].g = DEFAULT_PALETTE[COLOR_DEFAULT_BG].g / 3;
+        DEFAULT_PALETTE[COLOR_DEFAULT_FG].b = DEFAULT_PALETTE[COLOR_DEFAULT_BG].b / 3;
 
 #undef BRIGHTER
 #undef DARKER
-#endif
+    }
 }
 
 static void
@@ -1399,30 +1503,30 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     } else if (ch == KEY_ENTER) {
         return 1;
     } else if (ch == KEY_F2) {
-#if !defined(VGAMENU) && !defined(VESAMENU)
-        if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
-            COLOR_DEFAULT_BG = 1 + (rand()%6);
-            do {
-                COLOR_DARK_BG = 1 + (rand()%6);
-            } while (COLOR_DARK_BG == COLOR_DEFAULT_BG);
+        if (ui_mode == MENU_MODE_TEXT) {
+            if (display_adapter_type == DISPLAY_ADAPTER_CGA) {
+                COLOR_DEFAULT_BG = 1 + (rand()%6);
+                do {
+                    COLOR_DARK_BG = 1 + (rand()%6);
+                } while (COLOR_DARK_BG == COLOR_DEFAULT_BG);
 
-            update_color_bindings();
-            update_palette();
-        } else {
-            brightness_up_down = -1;
-            while (brightness > 0) {
+                update_color_bindings();
                 update_palette();
-            }
+            } else {
+                brightness_up_down = -1;
+                while (brightness > 0) {
+                    update_palette();
+                }
 
-            generate_random_palette();
-            store_color_palette();
+                generate_random_palette();
+                store_color_palette();
 
-            brightness_up_down = 1;
-            while (brightness < 255) {
-                update_palette();
+                brightness_up_down = 1;
+                while (brightness < 255) {
+                    update_palette();
+                }
             }
         }
-#endif
     } else if (ch == KEY_F3 || ch == '/') {
         if (state->game == -1 && !state->search.now_searching) {
             state->search.now_searching = 1;
@@ -1439,51 +1543,51 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         textmode_reset();
         exit(0);
     } else if (ch == KEY_F4 && (display_adapter_type == DISPLAY_ADAPTER_VGA || display_adapter_type == DISPLAY_ADAPTER_VESA)) {
-#if defined(VGAMENU) || defined(VESAMENU)
-        while (1) {
-            if (state->game != -1) {
-                // on a game page
-                show_screenshots(state->cat, state->game);
+        if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+            while (1) {
+                if (state->game != -1) {
+                    // on a game page
+                    show_screenshots(state->cat, state->game);
+                } else if (state->here && state->here->num_children && state->cursor > 0) {
+                    // in a choice screen with a games list
+                    show_screenshots(state->cat, state->here->children[state->cursor-1]);
+                } else {
+                    show_screenshots(state->cat, -1);
+                }
+
+                present(false);
+
+                int ch = getch();
+                if (ch == 0) {
+                    ch = 0x100 | getch();
+                }
+
+                if (ch == KEY_ESCAPE || ch == KEY_F4) {
+                    // F4 toggles screenshots on and off
+                    // ESC to get out of screenshot mode
+                    break;
+                } else if (ch == KEY_LEFT) {
+                    screenshot_idx--;
+                } else if (ch == KEY_RIGHT) {
+                    screenshot_idx++;
+                }
+            }
+        } else {
+            int game_id = -1;
+
+            if (state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
+                game_id = state->game;
             } else if (state->here && state->here->num_children && state->cursor > 0) {
-                // in a choice screen with a games list
-                show_screenshots(state->cat, state->here->children[state->cursor-1]);
-            } else {
-                show_screenshots(state->cat, -1);
+                game_id = state->here->children[state->cursor-1];
             }
 
-            present(false);
-
-            int ch = getch();
-            if (ch == 0) {
-                ch = 0x100 | getch();
-            }
-
-            if (ch == KEY_ESCAPE || ch == KEY_F4) {
-                // F4 toggles screenshots on and off
-                // ESC to get out of screenshot mode
-                break;
-            } else if (ch == KEY_LEFT) {
-                screenshot_idx--;
-            } else if (ch == KEY_RIGHT) {
-                screenshot_idx++;
+            if (game_id != -1) {
+                char cmdline[128];
+                sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[game_id]);
+                system(cmdline);
+                configure_text_mode();
             }
         }
-#else
-        int game_id = -1;
-
-        if (state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
-            game_id = state->game;
-        } else if (state->here && state->here->num_children && state->cursor > 0) {
-            game_id = state->here->children[state->cursor-1];
-        }
-
-        if (game_id != -1) {
-            char cmdline[128];
-            sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[game_id]);
-            system(cmdline);
-            configure_text_mode();
-        }
-#endif
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;
         if (state->game == -1) {
@@ -1508,20 +1612,20 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             get_label_func, get_label_func_user_data,
             frame_label, &height);
 
-#if defined(VGAMENU) || defined(VESAMENU)
-    if (height > 19) {
-        height = 19;
-    }
+    if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+        if (height > 19) {
+            height = 19;
+        }
 
-    y = (SCREEN_HEIGHT - height - 3);
-#else
-    if (y == -1) {
-        y = 5;
-        if (y + height > 20) {
-            y = (SCREEN_HEIGHT - height - 1) / 2;
+        y = (SCREEN_HEIGHT - height - 3);
+    } else {
+        if (y == -1) {
+            y = 5;
+            if (y + height > 20) {
+                y = (SCREEN_HEIGHT - height - 1) / 2;
+            }
         }
     }
-#endif
 
     if (x == -1) {
         x = (SCREEN_WIDTH - width) / 2;
@@ -1534,18 +1638,18 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             render_background_func(render_background_func_user_data);
         }
 
-#if defined(VGAMENU) || defined(VESAMENU)
-        if (state->game != -1) {
-            // on a game page
-            show_screenshots(state->cat, state->game);
-        } else if (state->here && state->here->num_children && state->cursor > 0) {
-            // in a choice screen with a games list
-            show_screenshots(state->cat, state->here->children[state->cursor-1]);
-        } else {
-            // default
-            show_screenshots(state->cat, -1);
+        if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+            if (state->game != -1) {
+                // on a game page
+                show_screenshots(state->cat, state->game);
+            } else if (state->here && state->here->num_children && state->cursor > 0) {
+                // in a choice screen with a games list
+                show_screenshots(state->cat, state->here->children[state->cursor-1]);
+            } else {
+                // default
+                show_screenshots(state->cat, -1);
+            }
         }
-#endif
 
         choice_dialog_render(x, y, state, n,
                 get_text_func, get_text_func_user_data,
@@ -1601,7 +1705,7 @@ get_excuse(const struct GameCatalogGame *game)
         return "Needs VBE";
     }
 
-    if ((game->flags & FLAG_REQUIRES_VBE2) && display_adapter_type != DISPLAY_ADAPTER_VGA && display_adapter_type != DISPLAY_ADAPTER_VESA) {
+    if ((game->flags & FLAG_REQUIRES_VBE2) != 0 && display_adapter_type != DISPLAY_ADAPTER_VGA && display_adapter_type != DISPLAY_ADAPTER_VESA) {
         return "Needs VBE 2.x";
     }
 
@@ -1838,12 +1942,12 @@ ipc_buffer_pop_menu_trail_entry(void)
 static void
 fade_out()
 {
-#if !defined(VGAMENU) && !defined(VESAMENU)
-    brightness_up_down = -1;
-    while (brightness) {
-        present(true);
+    if (ui_mode == MENU_MODE_TEXT) {
+        brightness_up_down = -1;
+        while (brightness) {
+            present(true);
+        }
     }
-#endif
 }
 
 static void
@@ -1914,7 +2018,6 @@ vga_load_dat(const char *filename, uint8_t __far *VGA, int palette_offset)
     }
 }
 
-#if defined(VGAMENU) || defined(VESAMENU)
 static void
 show_screenshots(struct GameCatalog *cat, int game)
 {
@@ -1959,7 +2062,6 @@ show_screenshots(struct GameCatalog *cat, int game)
         memset(SCREEN_BUFFER_OLD, 0, sizeof(SCREEN_BUFFER_OLD));
     }
 }
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -1975,26 +2077,18 @@ int main(int argc, char *argv[])
     srand(time(NULL));
 
     display_adapter_type = detect_display_adapter();
+
+    if (display_adapter_type == DISPLAY_ADAPTER_VGA) {
+        // Check if the VGA adapter is VESA-compatible
+        if(vbe_getinfo(&vbe) != -1) {
+            display_adapter_type = DISPLAY_ADAPTER_VESA;
+        }
+    }
+
     cpu_type = detect_cpu_type();
     have_32bit_cpu = (cpu_type != CPU_8086 && cpu_type != CPU_286);
     emulator_type = detect_dos_emulator();
     mouse_available = have_mouse_driver();
-
-#if defined(VGAMENU) || defined(VESAMENU)
-    set_palette_entry = vga_set_palette_entry_direct;
-#else
-    switch (display_adapter_type) {
-        case DISPLAY_ADAPTER_CGA:
-            set_palette_entry = NULL;
-            break;
-        case DISPLAY_ADAPTER_EGA:
-            set_palette_entry = ega_set_palette_entry;
-            break;
-        case DISPLAY_ADAPTER_VGA:
-            set_palette_entry = vga_set_palette_entry;
-            break;
-    }
-#endif
 
     if (argc == 2) {
         static struct {
@@ -2013,27 +2107,65 @@ int main(int argc, char *argv[])
             ipc_buffer = NULL;
         }
 
-#if defined(VGAMENU) || defined(VESAMENU)
-        // Reset color palette when entering graphics modes
-        generate_random_palette();
-#endif
-
         if (ipc_buffer) {
+            switch (ipc_buffer->menu_mode) {
+                case MENU_MODE_VGA:
+                    ui_mode = MENU_MODE_VGA;
+                    SCREEN_HEIGHT = VGA_SCREEN_HEIGHT;
+                    break;
+                case MENU_MODE_VESA:
+                    ui_mode = MENU_MODE_VESA;
+                    SCREEN_HEIGHT = VESA_SCREEN_HEIGHT;
+                    break;
+                default:
+                    ui_mode = MENU_MODE_TEXT;
+                    SCREEN_HEIGHT = TEXT_SCREEN_HEIGHT;
+                    break;
+            }
+
+            if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+                // Reset color palette when entering graphics modes
+                generate_random_palette();
+            }
+
+            if (ui_mode == MENU_MODE_TEXT) {
+                brightness = 0;
+            } else {
+                brightness = 255;
+            }
+
+            if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+                set_palette_entry = vga_set_palette_entry_direct;
+            } else {
+                switch (display_adapter_type) {
+                    case DISPLAY_ADAPTER_CGA:
+                        set_palette_entry = NULL;
+                        break;
+                    case DISPLAY_ADAPTER_EGA:
+                        set_palette_entry = ega_set_palette_entry;
+                        break;
+                    case DISPLAY_ADAPTER_VGA:
+                    case DISPLAY_ADAPTER_VESA:
+                        set_palette_entry = vga_set_palette_entry;
+                        break;
+                }
+            }
+
             if (ipc_buffer->color_palette_len == 0) {
                 generate_random_palette();
-#if !defined(VGAMENU) && !defined(VESAMENU)
-                // Only save color palette in ipc_buffer in text mode
-                store_color_palette();
-#endif
-            } else {
-#if !defined(VGAMENU) && !defined(VESAMENU)
-                // Only restore color palette from ipc_buffer in text mode
-                for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
-                    DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
-                    DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
-                    DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
+                if (ui_mode == MENU_MODE_TEXT) {
+                    // Only save color palette in ipc_buffer in text mode
+                    store_color_palette();
                 }
-#endif
+            } else {
+                if (ui_mode == MENU_MODE_TEXT) {
+                    // Only restore color palette from ipc_buffer in text mode
+                    for (int i=0; i<ipc_buffer->color_palette_len; ++i) {
+                        DEFAULT_PALETTE[i].r = ipc_buffer->color_palette[i][0];
+                        DEFAULT_PALETTE[i].g = ipc_buffer->color_palette[i][1];
+                        DEFAULT_PALETTE[i].b = ipc_buffer->color_palette[i][2];
+                    }
+                }
             }
         }
     }
@@ -2066,55 +2198,51 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-#if defined(VGAMENU)
-    {
+    if (ui_mode == MENU_MODE_VGA) {
         union REGS inregs, outregs;
         inregs.h.ah = 0;
         inregs.h.al = 0x13;
 
         int86(0x10, &inregs, &outregs);
+    } else if (ui_mode == MENU_MODE_VESA) {
+        if(vbe_getinfo(&vbe) == -1) {
+            ipc_buffer->menu_mode = MENU_MODE_TEXT;
+            ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+            textmode_reset();
+            exit(0);
+        }
+
+        if(vbe_getmodeinfo(0x101, &minf) == -1) {
+            ipc_buffer->menu_mode = MENU_MODE_TEXT;
+            ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+            textmode_reset();
+            exit(0);
+        }
+
+        /* allocate main memory framebuffer and fill it with something */
+        fbsize = (long)VESA_WIDTH * (long)VESA_HEIGHT;
+        if(!(fb = halloc(fbsize, 1))) {
+            ipc_buffer->menu_mode = MENU_MODE_TEXT;
+            ipc_buffer->request = IPC_SWITCH_MENU_MODE;
+            textmode_reset();
+            exit(0);
+        }
+
+        /* calc window size in bytes and window stepping in granularity units */
+        fb_winsz = (unsigned long)minf.win_size << 10;
+        fb_winstep = 0;
+        long sz = 0;
+        while(sz < fb_winsz) {
+                fb_winstep++;
+                sz += (unsigned long)minf.win_gran << 10;
+        }
+
+
+        /* set video mode 640x480 8bpp */
+        vbe_setmode(0x101);
+    } else if (ui_mode == MENU_MODE_TEXT) {
+        configure_text_mode();
     }
-#elif defined(VESAMENU)
-    if(vbe_getinfo(&vbe) == -1) {
-        ipc_buffer->menu_mode = MENU_MODE_TEXT;
-        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
-        textmode_reset();
-        exit(0);
-    }
-
-    if(vbe_getmodeinfo(0x101, &minf) == -1) {
-        ipc_buffer->menu_mode = MENU_MODE_TEXT;
-        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
-        textmode_reset();
-        exit(0);
-    }
-
-    /* allocate main memory framebuffer and fill it with something */
-    fbsize = (long)VESA_WIDTH * (long)VESA_HEIGHT;
-    if(!(fb = halloc(fbsize, 1))) {
-        ipc_buffer->menu_mode = MENU_MODE_TEXT;
-        ipc_buffer->request = IPC_SWITCH_MENU_MODE;
-        textmode_reset();
-        exit(0);
-    }
-
-    /* calc window size in bytes and window stepping in granularity units */
-    fb_winsz = (unsigned long)minf.win_size << 10;
-    fb_winstep = 0;
-    long sz = 0;
-    while(sz < fb_winsz) {
-            fb_winstep++;
-            sz += (unsigned long)minf.win_gran << 10;
-    }
-
-
-    /* set video mode 640x480 8bpp */
-    vbe_setmode(0x101);
-
-    display_adapter_type = DISPLAY_ADAPTER_VESA;
-#else
-    configure_text_mode();
-#endif
 
     // cat takes ownership of "buf"
     struct GameCatalog *cat = game_catalog_parse(buf, len);
@@ -2189,11 +2317,8 @@ int main(int argc, char *argv[])
             int selection = choice_dialog(-1, -1, buf, &cds, glc.count,
                     get_text_game, &gtgud,
                     get_label_game, &glc,
-#if defined(VGAMENU) || defined(VESAMENU)
-                    NULL, NULL,
-#else
-                    render_group_background, &brud,
-#endif
+                    (ui_mode == MENU_MODE_TEXT) ? render_group_background : NULL,
+                    (ui_mode == MENU_MODE_TEXT) ? &brud : NULL,
                     cat->names->d[game]);
 
             if (glc.choices[selection] == CHOICE_BACK) {
@@ -2237,19 +2362,15 @@ int main(int argc, char *argv[])
             cds.cursor = here->cursor_index;
             cds.offset = here->scroll_offset;
 
-#if defined(VGAMENU) || defined(VESAMENU)
-            int selection = choice_dialog(2, 20, buf, &cds, max + 1,
+            int y = 3;
+            if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
+                y = 20;
+            }
+            int selection = choice_dialog(2, y, buf, &cds, max + 1,
                     NULL, NULL,
                     get_label_group, &glgud,
                     NULL, NULL,
                     cat->strings->d[here->title_idx]);
-#else
-            int selection = choice_dialog(2, 3, buf, &cds, max + 1,
-                    NULL, NULL,
-                    get_label_group, &glgud,
-                    NULL, NULL,
-                    cat->strings->d[here->title_idx]);
-#endif
             here->cursor_index = cds.cursor;
             here->scroll_offset = cds.offset;
 
@@ -2286,10 +2407,10 @@ int main(int argc, char *argv[])
 
     fade_out();
 
-#if defined(VESAMENU)
-    hfree(fb);
-    vbe_setmode(3);
-#endif
+    if (ui_mode == MENU_MODE_VESA) {
+        hfree(fb);
+        vbe_setmode(3);
+    }
     textmode_reset();
 
     return 0;

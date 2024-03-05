@@ -3,16 +3,21 @@
 #include <conio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "gamectlg.h"
 #include "ipc.h"
 #include "vgautil.h"
 #include "mcbutil.h"
+#include "cpuutil.h"
 
 #include "chain.h"
 
 static struct IPCBuffer
 ipc_buffer;
+
+static bool
+force_16bit_menu = false;
 
 int
 run_command(char *cmd, char *args)
@@ -159,17 +164,11 @@ int runmenu()
 
     printf("Launching menu...\n");
 
-    switch (ipc_buffer.menu_mode) {
-        case MENU_MODE_TEXT:
-        default:
-            return (run_command("menu.exe", args) == 0);
-
-        case MENU_MODE_VGA:
-            return (run_command("vgamenu.exe", args) == 0);
-
-        case MENU_MODE_VESA:
-            return (run_command("vesamenu.exe", args) == 0);
+    if (!force_16bit_menu && detect_cpu_type() == CPU_386) {
+        return (run_command("menu32.exe", args) == 0);
     }
+
+    return (run_command("menu.exe", args) == 0);
 }
 
 static void _interrupt _far
@@ -302,14 +301,16 @@ deinit_fileopen_hook()
     _dos_setvect(0x21, old_int21_handler);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
-#if defined(VGAMENU)
-    printf("DOS Game Jam Demo Disc VGASTART.EXE\n");
-#else
     printf("DOS Game Jam Demo Disc START.EXE\n");
-#endif
     printf("Git rev %s (%s, %s)\n", VERSION, BUILDDATE, BUILDTIME);
+
+    for (int i=0; i<argc; ++i) {
+        if (strcmp(argv[i], "16bit") == 0) {
+            force_16bit_menu = true;
+        }
+    }
 
     //init_fileopen_hook();
 
