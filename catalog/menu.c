@@ -1,6 +1,36 @@
+#if defined(DJGPP)
+// http://www.delorie.com/djgpp/v2faq/faq17_7.html
+#include <sys/nearptr.h>
+#include <crt0.h>
+#define _fstrcmp strcmp
+#define _fstrcpy strcpy
+#define _fstrcat strcat
+#define _fmemcpy memcpy
+#define far
+#define __far
+#define _Packed __attribute__((packed))
+#define huge
+#define halloc calloc
+#define hfree free
+void * MK_FP (unsigned short seg, unsigned short ofs)
+{
+if ( !(_crt0_startup_flags & _CRT0_FLAG_NEARPTR) )
+  if (!__djgpp_nearptr_enable ())
+    return (void *)0;
+return (void *) (seg*16 + ofs + __djgpp_conventional_base);
+}
+#endif
+
+
 #if defined(VESAMENU)
 #include <malloc.h>
+
+#if defined(DJGPP)
+#include <dos.h>
+#else
 #include <i86.h>
+#endif
+
 #include "vbe.h"
 #include "vbe.c"
 
@@ -1933,6 +1963,10 @@ show_screenshots(struct GameCatalog *cat, int game)
 
 int main(int argc, char *argv[])
 {
+#if defined(DJGPP)
+    __djgpp_nearptr_enable();
+#endif
+
     // Empty keyboard buffer
     while (kbhit()) {
         getch();
