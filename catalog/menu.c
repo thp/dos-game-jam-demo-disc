@@ -1962,27 +1962,6 @@ configure_text_mode()
     update_palette();
 }
 
-struct PCXHeader {
-    uint8_t header_field; // 0x0a
-    uint8_t version; // 5
-    uint8_t encoding; // 1 = RLE
-    uint8_t bpp; // 8
-    uint16_t min_x;
-    uint16_t min_y;
-    uint16_t max_x;
-    uint16_t max_y;
-    uint16_t dpi_x;
-    uint16_t dpi_y;
-    uint8_t ega_palette[16][3];
-    uint8_t reserved0;
-    uint8_t num_planes; // 1
-    uint16_t stride_bytes; // 320
-    uint16_t palette_mode; // 1 = color
-    uint16_t x_resolution;
-    uint16_t y_resolution;
-    uint8_t reserved1[54];
-};
-
 static void
 vga_load_dat(const char *filename, uint8_t __far *VGA, int palette_offset)
 {
