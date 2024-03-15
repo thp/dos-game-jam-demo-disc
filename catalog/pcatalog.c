@@ -34,6 +34,7 @@ void game_catalog_print(struct GameCatalog *cat)
         printf("        D: '%s'\n", cat->descriptions->d[i]);
         printf("        U: '%s'\n", cat->urls->d[i]);
         printf("        I: '%s'\n", cat->ids->d[i]);
+        printf("        R: '%s'\n", cat->readmes->d[i]);
         printf("        loader='%s', jam='%s', genre='%s', exit='%s', type='%s', shots=%d\n",
                 cat->strings->d[cat->games[i].loader_idx],
                 cat->strings->d[cat->games[i].jam_idx],

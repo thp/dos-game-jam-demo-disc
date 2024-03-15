@@ -107,6 +107,7 @@ game_catalog_parse(char *buf, int len)
     cat->descriptions = _game_catalog_read_string_list(cat);
     cat->urls = _game_catalog_read_string_list(cat);
     cat->ids = _game_catalog_read_string_list(cat);
+    cat->readmes = _game_catalog_read_string_list(cat);
     cat->strings = _game_catalog_read_string_list(cat);
 
     cat->string_lists = _game_catalog_read_index_list(cat);

@@ -2,11 +2,40 @@ import collections
 import struct
 import argparse
 import csv
+import os
+import glob
 
 #
 # DOS Game Jam Demo Disc Game Catalog Format
 # 2023-08-09 Thomas Perl <m@thp.io>
 #
+
+PREFIX_STRINGS = {
+    'GAME': 'DEMO2023/',
+    'TOOL': 'EXTRAS/',
+    'DRV': 'EXTRAS/',
+    'SDK': 'SDKS/',
+}
+
+GAMES_WITHOUT_README = (
+    'piadrane', 'fuelv02', 'gusano', 'tetrik',
+    'dt3k', 'dsweeper', 'tdroid', 'cats10',
+    'transorb', 'starlite', 'zoz', 'farm1985',
+    '587sqnj', 'ow', 'allegro', 'cgacave',
+    'vianav21', 'perils', 'aching', 'spmanbob',
+    'termtris', 'cgarobot', 'lyfe', 'molten',
+    'waterway', 'cube', 'priv5', 'cgastein',
+    'batmio', 'cara', 'dialer', 'dosrocks',
+    'freeroam', 'blazer', 'astro',
+)
+
+KNOWN_README_FILE_NAMES = (
+    'readme.txt', 'readme.md', 'readme', 'about.txt',
+    'catalog.exe', 'readme12.txt', 'orbit.txt', 'adlipt.txt',
+    'unisound.txt', 'fatuma.txt', 'ossuary.txt', 'vanish.txt',
+    'aboutgfs.txt', 'cutlass.txt',
+    'file_id.diz',
+)
 
 parser = argparse.ArgumentParser(description='Convert CSV game list to datafile')
 parser.add_argument('--verbose', action='store_true', help='Be verbose')
@@ -28,6 +57,26 @@ def translate_toolchain(toolchain):
         return 'Assembly'
 
     return toolchain
+
+def get_path_case_insensitive(path):
+    """Quick and dirty case-insensitive path resolver.
+
+    The path must be relative to the current working directory. Each
+    component is resolved by looking for all possible filename candidates
+    and picking the first one that matches. In case of multiple file name
+    matches (on a case sensitive filesystem, that's possible), any valid
+    match is allowed to be returned.
+    """
+    result = []
+    parts = path.split(os.sep)
+    for part in parts:
+        query = os.sep.join(result + ['*'])
+        matches = [os.path.basename(x) for x in glob.glob(query)]
+        candidate = next((x for x in matches if x.lower() == part.lower()), None)
+        if candidate is None:
+            return None
+        result.append(candidate)
+    return os.sep.join(result)
 
 with open(args.infile) as fp:
     reader = csv.DictReader(fp)
@@ -59,6 +108,33 @@ with open(args.infile) as fp:
         if not d['Visible']:
             print('Skip:', d['Name'])
             continue
+
+        d['Readme'] = ''
+
+        if d['Run']:
+            pfx = PREFIX_STRINGS[d['Kind']]
+            prefix = pfx.rstrip('/')
+            gamepath = get_path_case_insensitive(os.path.join(prefix, os.path.dirname(d['Run'].split(' ', 1)[0])))
+            assert gamepath is not None and os.path.exists(gamepath), gamepath
+            for candidate in KNOWN_README_FILE_NAMES:
+                filename = get_path_case_insensitive(os.path.join(gamepath, candidate))
+                if filename is None:
+                    continue
+                if os.path.exists(filename):
+                    d['Readme'] = filename
+                    break
+
+            if d['ID'] == 'ctmouse':
+                d['Readme'] = get_path_case_insensitive(gamepath.replace('bin', 'doc/ctmouse/ctmouse.txt'))
+
+            if d['ID'] not in GAMES_WITHOUT_README and not d['Readme']:
+                raise ValueError(d)
+
+            if d['Readme']:
+                # Strip the prefix, as we only used it to resolve the relative path,
+                # but at runtime we can just add the prefix again, which we store
+                assert d['Readme'].lower().startswith(pfx.lower()), (d['Readme'], pfx)
+                d['Readme'] = d['Readme'][len(pfx):]
 
         print(d)
         games.append(d)
@@ -108,13 +184,6 @@ def get_string_index(s):
     if s not in strings:
         strings.append(s)
     return strings.index(s)
-
-PREFIX_STRINGS = {
-    'GAME': 'DEMO2023/',
-    'TOOL': 'EXTRAS/',
-    'DRV': 'EXTRAS/',
-    'SDK': 'SDKS/',
-}
 
 # Place all prefixes early in the string list,
 # so the prefix_idx always fits into an 8-bit value
@@ -279,6 +348,7 @@ names = []
 descriptions = []
 urls = []
 ids = []
+readmes = []
 
 def pack_strings(fp, strings):
     fp.write(struct.pack('<H', len(strings)))
@@ -303,6 +373,7 @@ with open(args.outfile, 'wb') as fp:
         descriptions.append(game['Description'])
         urls.append(game['URL'])
         ids.append(game['ID'])
+        readmes.append(game['Readme'])
 
         genre_idx = get_string_index(game['Genre'])
         run_idx = get_string_index(game['Run'])
@@ -388,6 +459,7 @@ with open(args.outfile, 'wb') as fp:
     pack_strings(fp, descriptions)
     pack_strings(fp, urls)
     pack_strings(fp, ids)
+    pack_strings(fp, readmes)
     pack_strings(fp, strings)
 
     pack_index_list(fp, string_lists)

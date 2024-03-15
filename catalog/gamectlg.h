@@ -89,6 +89,7 @@ struct GameCatalog {
     struct GameCatalogStrings *descriptions;
     struct GameCatalogStrings *urls;
     struct GameCatalogStrings *ids;
+    struct GameCatalogStrings *readmes;
 
     /* string bucket (for _idx) */
     struct GameCatalogStrings *strings;

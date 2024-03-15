@@ -1861,7 +1861,7 @@ static const char *
 GAME_LAUNCH_CHOICE[] = {
     "(..)",
     "Launch",
-    "Readme",
+    "Open README",
 };
 
 struct GameLaunchChoices {
@@ -2288,8 +2288,8 @@ int main(int argc, char *argv[])
                 glc.choices[glc.count++] = CHOICE_LAUNCH;
             }
 
-            // TODO: Add README support
-            if (false) {
+            const char *readme_txt = cat->readmes->d[game];
+            if (readme_txt && readme_txt[0] != '\0') {
                 glc.choices[glc.count++] = CHOICE_README;
             }
 
@@ -2303,9 +2303,7 @@ int main(int argc, char *argv[])
             if (glc.choices[selection] == CHOICE_BACK) {
                 ipc_buffer_pop_menu_trail_entry();
                 game = -1;
-            } else if (glc.choices[selection] == CHOICE_README) {
-                // TODO
-            } else if (glc.choices[selection] == CHOICE_LAUNCH) {
+            } else if (glc.choices[selection] == CHOICE_LAUNCH || glc.choices[selection] == CHOICE_README) {
                 // TODO: Index 0 forced here, so that the first choice (back)
                 // is pre-selected when we return from the launched game
                 ipc_buffer_add_menu_trail_entry(0, here);
@@ -2315,12 +2313,43 @@ int main(int argc, char *argv[])
 
                 if (ipc_buffer) {
                     ipc_buffer->request = IPC_RUN_GAME;
-                    ipc_buffer->game_flags = cat->games[game].flags;
 
-                    _fstrcpy(ipc_buffer->title, cat->names->d[game]);
+                    switch (glc.choices[selection]) {
+                        case CHOICE_LAUNCH:
+                            ipc_buffer->game_flags = cat->games[game].flags;
 
-                    _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
-                    _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
+                            _fstrcpy(ipc_buffer->title, cat->names->d[game]);
+
+                            _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
+                            _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].run_idx]);
+                            break;
+                        case CHOICE_README:
+                            ipc_buffer->game_flags = 0;
+
+                            _fstrcpy(ipc_buffer->title, "Readme for ");
+                            _fstrcat(ipc_buffer->title, cat->names->d[game]);
+
+                            if (strcasecmp(readme_txt + strlen(readme_txt) - 4, ".exe") == 0) {
+                                // Directly executable readme
+                                _fstrcpy(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
+                                _fstrcat(ipc_buffer->cmdline, readme_txt);
+                            } else {
+                                // Text file that needs a viewer
+                                _fstrcpy(ipc_buffer->cmdline, "extras/list96y1/listr.com ");
+                                _fstrcat(ipc_buffer->cmdline, cat->strings->d[cat->games[game].prefix_idx]);
+                                _fstrcat(ipc_buffer->cmdline, readme_txt);
+                            }
+
+                            for (int i=0; ipc_buffer->cmdline[i]; ++i) {
+                                if (ipc_buffer->cmdline[i] == '/') {
+                                    ipc_buffer->cmdline[i] = '\\';
+                                }
+                            }
+                            break;
+                        default:
+                            // Unknown launch method
+                            break;
+                    }
 
                     fade_out();
                     return 0;
