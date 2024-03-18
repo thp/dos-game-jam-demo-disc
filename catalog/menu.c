@@ -1054,8 +1054,27 @@ present_vesa(bool ui)
 
             y = sy;
         }
+
+        memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
     } else {
-        // TODO
+        for (uint32_t y=0; y<h; ++y) {
+            uint32_t sy = y*VGA_HEIGHT/h;
+            sy *= VGA_WIDTH;
+            for (uint32_t x=0; x<w; ++x) {
+                uint32_t sx = x*VGA_WIDTH/w;
+                vga[y*w+x] = VGA_BACKBUFFER[sy+sx];
+            }
+        }
+
+        // invalidate screen buffer to redraw the UI again later
+        for (uint16_t i=0; i<sizeof(SCREEN_BUFFER_OLD)/sizeof(SCREEN_BUFFER_OLD[0]); ++i) {
+            int ch = SCREEN_BUFFER_OLD[i][0];
+
+            // background doesn't need to be invalidated
+            if (ch != 0xb2 && ch != 0xb0) {
+                SCREEN_BUFFER_OLD[i][1] = 0;
+            }
+        }
     }
 
     /* copy to video ram */
@@ -1071,8 +1090,6 @@ present_vesa(bool ui)
             sz -= fb_winsz;
             winpos += fb_winstep;
     }
-
-    memcpy(SCREEN_BUFFER_OLD, SCREEN_BUFFER, sizeof(SCREEN_BUFFER_OLD));
 }
 
 static void
@@ -1083,7 +1100,7 @@ present_text(bool ui)
 }
 
 static void
-present(bool ui)
+present(bool ui, enum MenuMode mode)
 {
     // wait for vertical retrace before copying
     while ((inp(0x3DA) & 8) != 0);
@@ -1091,11 +1108,11 @@ present(bool ui)
 
     update_palette();
 
-    if (ui_mode == MENU_MODE_TEXT) {
+    if (mode == MENU_MODE_TEXT) {
         present_text(ui);
-    } else if (ui_mode == MENU_MODE_VGA) {
+    } else if (mode == MENU_MODE_VGA) {
         present_vga(ui);
-    } else if (ui_mode == MENU_MODE_VESA) {
+    } else if (mode == MENU_MODE_VESA) {
         present_vesa(ui);
     }
 }
@@ -1394,6 +1411,23 @@ search_previous(struct ChoiceDialogState *state)
     }
 }
 
+static void
+configure_text_mode_palette()
+{
+    switch (display_adapter_type) {
+        case DISPLAY_ADAPTER_CGA:
+            set_palette_entry = NULL;
+            break;
+        case DISPLAY_ADAPTER_EGA:
+            set_palette_entry = ega_set_palette_entry;
+            break;
+        case DISPLAY_ADAPTER_VGA:
+        case DISPLAY_ADAPTER_VESA:
+            set_palette_entry = vga_set_palette_entry;
+            break;
+    }
+}
+
 static int
 choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 {
@@ -1403,7 +1437,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     // avoid extraneous redraws / "snow" in the graphics
     if (is_fading()) {
         if (!kbhit()) {
-            present(true);
+            present(true, ui_mode);
             return 0;
         }
     }
@@ -1543,50 +1577,52 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
         textmode_reset();
         exit(0);
     } else if (ch == KEY_F4 && (display_adapter_type == DISPLAY_ADAPTER_VGA || display_adapter_type == DISPLAY_ADAPTER_VESA)) {
-        if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
-            while (1) {
-                if (state->game != -1) {
-                    // on a game page
-                    show_screenshots(state->cat, state->game);
-                } else if (state->here && state->here->num_children && state->cursor > 0) {
-                    // in a choice screen with a games list
-                    show_screenshots(state->cat, state->here->children[state->cursor-1]);
-                } else {
-                    show_screenshots(state->cat, -1);
-                }
+        if (ui_mode == MENU_MODE_TEXT) {
+            union REGS inregs, outregs;
+            inregs.h.ah = 0;
+            inregs.h.al = 0x13;
 
-                present(false);
+            int86(0x10, &inregs, &outregs);
 
-                int ch = getch();
-                if (ch == 0) {
-                    ch = 0x100 | getch();
-                }
+            set_palette_entry = vga_set_palette_entry_direct;
 
-                if (ch == KEY_ESCAPE || ch == KEY_F4) {
-                    // F4 toggles screenshots on and off
-                    // ESC to get out of screenshot mode
-                    break;
-                } else if (ch == KEY_LEFT) {
-                    screenshot_idx--;
-                } else if (ch == KEY_RIGHT) {
-                    screenshot_idx++;
-                }
-            }
-        } else {
-            int game_id = -1;
+            // Force reload of image + palette below
+            show_screenshots(NULL, -1);
+        }
 
-            if (state->game != -1 && state->cat->games[state->game].num_screenshots > 0) {
-                game_id = state->game;
+        while (1) {
+            if (state->game != -1) {
+                // on a game page
+                show_screenshots(state->cat, state->game);
             } else if (state->here && state->here->num_children && state->cursor > 0) {
-                game_id = state->here->children[state->cursor-1];
+                // in a choice screen with a games list
+                show_screenshots(state->cat, state->here->children[state->cursor-1]);
+            } else {
+                show_screenshots(state->cat, -1);
             }
 
-            if (game_id != -1) {
-                char cmdline[128];
-                sprintf(cmdline, "viewshot.exe pcx/%s", state->cat->ids->d[game_id]);
-                system(cmdline);
-                configure_text_mode();
+            present(false, (ui_mode == MENU_MODE_TEXT) ? MENU_MODE_VGA : ui_mode);
+
+            int ch = getch();
+            if (ch == 0) {
+                ch = 0x100 | getch();
             }
+
+            if (ch == KEY_ESCAPE || ch == KEY_F4) {
+                // F4 toggles screenshots on and off
+                // ESC to get out of screenshot mode
+                break;
+            } else if (ch == KEY_LEFT) {
+                screenshot_idx--;
+            } else if (ch == KEY_RIGHT) {
+                screenshot_idx++;
+            }
+        }
+
+        if (ui_mode == MENU_MODE_TEXT) {
+            textmode_reset();
+            configure_text_mode();
+            configure_text_mode_palette();
         }
     } else if (ch == KEY_ESCAPE) {
         state->cursor = 0;
@@ -1660,7 +1696,7 @@ choice_dialog(int x, int y, const char *title, struct ChoiceDialogState *state, 
             draw_statusbar(state->search.search_str);
         }
 
-        present(true);
+        present(true, ui_mode);
 
         if (choice_dialog_handle_input(state, n)) {
             break;
@@ -1945,7 +1981,7 @@ fade_out()
     if (ui_mode == MENU_MODE_TEXT) {
         brightness_up_down = -1;
         while (brightness) {
-            present(true);
+            present(true, ui_mode);
         }
     }
 }
@@ -1963,30 +1999,29 @@ configure_text_mode()
 }
 
 static void
-vga_load_dat(const char *filename, uint8_t __far *VGA, int palette_offset)
+vga_load_dat(const char *filename, uint8_t __far *out, int palette_offset)
 {
     palette_offset += NUM_TEXTMODE_COLORS;
 
-    uint8_t buf[320];
+    unsigned char buf[320];
 
     FILE *fp = fopen(filename, "rb");
     if (fp) {
-        uint8_t far *out = VGA;
         for (long y=0; y<200; ++y) {
-            fread(buf, 320, 1, fp);
+            fread(buf, sizeof(buf), 1, fp);
 
-            for (int i=0; i<320; ++i) {
+            for (int i=0; i<sizeof(buf); ++i) {
                 buf[i] += palette_offset;
             }
 
-            _fmemcpy(out, buf, 320);
-            out += 320;
+            _fmemcpy(out, buf, sizeof(buf));
+            out += sizeof(buf);
         }
 
-        fread(buf, 3*60, 1, fp);
+        fread(buf, 3*MAX_IMAGE_COLORS, 1, fp);
         fclose(fp);
 
-        uint8_t *read = buf;
+        unsigned char *read = buf;
         for (int i=0; i<MAX_IMAGE_COLORS; ++i) {
             int r = *read++;
             int g = *read++;
@@ -2000,6 +2035,16 @@ vga_load_dat(const char *filename, uint8_t __far *VGA, int palette_offset)
 static void
 show_screenshots(struct GameCatalog *cat, int game)
 {
+    static char current_backbuffer_filename[128];
+    static char current_backbuffer_blur_filename[128];
+
+    if (cat == NULL) {
+        // Invalidate and force reload of palette
+        *current_backbuffer_filename = '\0';
+        *current_backbuffer_blur_filename = '\0';
+        return;
+    }
+
     const char *game_name = "default";
 
     if (game != -1 && cat->games[game].num_screenshots > 0) {
@@ -2016,8 +2061,7 @@ show_screenshots(struct GameCatalog *cat, int game)
 
     bool backbuffer_changed = false;
 
-    static char current_backbuffer_filename[128];
-    sprintf(filename, "pcx/%s/shot%d.dat", game_name, screenshot_idx);
+    sprintf(filename, "scrnshot/%s/shot%d.dat", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_filename) != 0) {
         vga_load_dat(filename, VGA_BACKBUFFER, palette_page * (2 * MAX_IMAGE_COLORS));
         strcpy(current_backbuffer_filename, filename);
@@ -2025,8 +2069,7 @@ show_screenshots(struct GameCatalog *cat, int game)
         backbuffer_changed = true;
     }
 
-    static char current_backbuffer_blur_filename[128];
-    sprintf(filename, "pcx/%s/blur%d.dat", game_name, screenshot_idx);
+    sprintf(filename, "scrnshot/%s/blur%d.dat", game_name, screenshot_idx);
     if (strcmp(filename, current_backbuffer_blur_filename) != 0) {
         vga_load_dat(filename, VGA_BACKBUFFER_BLUR, palette_page * (2 * MAX_IMAGE_COLORS) + MAX_IMAGE_COLORS);
         strcpy(current_backbuffer_blur_filename, filename);
@@ -2116,18 +2159,7 @@ int main(int argc, char *argv[])
             if (ui_mode == MENU_MODE_VGA || ui_mode == MENU_MODE_VESA) {
                 set_palette_entry = vga_set_palette_entry_direct;
             } else {
-                switch (display_adapter_type) {
-                    case DISPLAY_ADAPTER_CGA:
-                        set_palette_entry = NULL;
-                        break;
-                    case DISPLAY_ADAPTER_EGA:
-                        set_palette_entry = ega_set_palette_entry;
-                        break;
-                    case DISPLAY_ADAPTER_VGA:
-                    case DISPLAY_ADAPTER_VESA:
-                        set_palette_entry = vga_set_palette_entry;
-                        break;
-                }
+                configure_text_mode_palette();
             }
 
             if (ipc_buffer->color_palette_len == 0) {

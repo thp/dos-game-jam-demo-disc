@@ -1,4 +1,4 @@
-TARGETS := gamectlg.dat menu.exe menu32.exe start.exe viewshot.exe menu_src.zip
+TARGETS := gamectlg.dat menu.exe menu32.exe start.exe menu_src.zip
 
 default: $(TARGETS)
 
@@ -16,7 +16,7 @@ DOSBOX ?= dosbox-x
 
 extra: default pcatalog
 
-menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2pcx.py cntshots.py
+menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2dat.py cntshots.py
 	zip $@ $^
 
 gamectlg.dat: csv2dat.py gamectlg.csv
@@ -40,15 +40,11 @@ start.exe: start.c chain.o
 chain.o: chain.s
 	owcc -c -o $@ $^
 
-viewshot.exe: viewshot.c
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
-	rm -f viewshot.o
-
 demodisc.iso: $(TARGETS)
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -b FD13BOOT.IMG -o $@ -f layout
 
 refresh:
-	python3 png2pcx.py
+	python3 png2dat.py
 	python3 cntshots.py
 
 clean:
@@ -57,7 +53,7 @@ clean:
 distclean: clean
 	$(RM) demodisc.iso
 
-run: start.exe menu.exe viewshot.exe vgamenu.exe vesamenu.exe
+run: start.exe menu.exe menu32.exe
 	$(DOSBOX) $<
 
 boot: demodisc.iso

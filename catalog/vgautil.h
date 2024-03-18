@@ -103,7 +103,11 @@ vga_set_palette_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b)
         0x3F, // White
     };
 
-    outp(0x3c8, EGA_TO_VGA_INDEX[index]);
+    if (index < sizeof(EGA_TO_VGA_INDEX)/sizeof(EGA_TO_VGA_INDEX[0])) {
+        index = EGA_TO_VGA_INDEX[index];
+    }
+
+    outp(0x3c8, index);
     outp(0x3c9, r >> 2);
     outp(0x3c9, g >> 2);
     outp(0x3c9, b >> 2);

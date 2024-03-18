@@ -10,10 +10,10 @@ with open('gamectlg.csv', 'r', encoding='utf-8') as fp:
         else:
             head, dirname, count = line.rsplit(',', 2)
             count = int(count)
-            files = glob.glob(os.path.join('pcx', dirname, 'shot*.pcx'))
+            files = glob.glob(os.path.join('scrnshot', dirname, 'shot*.dat'))
             count = len(files)
             for i in range(count):
-                fn = f'pcx/{dirname}/shot{i}.pcx'
+                fn = f'scrnshot/{dirname}/shot{i}.dat'
                 assert os.path.exists(fn), fn
             assert count == len(files), line
             lines.append(f'{head},{dirname},{count}')
