@@ -8,8 +8,11 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <direct.h>
-#include "video.h"
+
 #include "image.h"
+#include "image.c"
+
+#include "vgautil.h"
 
 static void show_image(struct image *img);
 static struct image *prev_image(struct image *img);
@@ -17,6 +20,14 @@ static struct image *open_imgdir(const char *dirname);
 
 static struct image *curimg;
 
+static void vid_setmode(int mode)
+{
+        union REGS inregs, outregs;
+        inregs.h.ah = 0;
+        inregs.h.al = 0x13;
+
+        int86(0x10, &inregs, &outregs);
+}
 
 int main(int argc, char **argv)
 {
@@ -127,7 +138,7 @@ static void show_image(struct image *img)
 	_fmemset(MK_FP(0xa000, 0), 0, 64000);
 
 	for(i=0; i<256; i++) {
-		vid_setcolor(i, col->r, col->g, col->b);
+		vga_set_palette_entry_direct(i, col->r, col->g, col->b);
 		col++;
 	}
 

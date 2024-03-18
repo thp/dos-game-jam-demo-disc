@@ -42,7 +42,7 @@ def check_filename(basename):
 
 
 
-for basedir in ('DEMO2023', 'pcx', 'extras'):
+for basedir in ('DEMO2023', 'pcx', 'extras', 'SDKS'):
     for dirname, filenames, dirnames in os.walk(basedir):
         for filename in itertools.chain(filenames, dirnames):
             if not check_filename(filename):
