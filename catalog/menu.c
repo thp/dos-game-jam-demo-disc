@@ -75,7 +75,7 @@ long fb_winstep;
 #include "emuutil.h"
 
 #include "vgafont.h"
-#include "font_8x16.h"
+#include "font8x16.h"
 
 static struct IPCBuffer __far *
 ipc_buffer = NULL;
