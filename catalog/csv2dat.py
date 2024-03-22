@@ -124,7 +124,7 @@ with open(args.infile) as fp:
                     d['Readme'] = filename
                     break
 
-            if d['ID'] == 'ctmouse':
+            if d['ID'] == 'mouse':
                 d['Readme'] = get_path_case_insensitive(gamepath.replace('bin', 'doc/ctmouse/ctmouse.txt'))
 
             if d['ID'] not in GAMES_WITHOUT_README and not d['Readme']:
