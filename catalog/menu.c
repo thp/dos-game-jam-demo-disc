@@ -37,6 +37,7 @@ long fb_winsz;
 long fb_winstep;
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +47,9 @@ long fb_winstep;
 
 #if !defined(DJGPP)
 #include <i86.h>
+#include <direct.h>
+#else
+#include <sys/stat.h>
 #endif
 
 #include <dos.h>
@@ -339,7 +343,8 @@ struct HotKey {
     const char *func;
 };
 
-void draw_statusbar(const char *search_string)
+static void
+draw_statusbar_internal(struct HotKey const *keys, const char *search_string)
 {
     for (int i=0; i<SCREEN_WIDTH; ++i) {
         SCREEN_BUFFER[(SCREEN_HEIGHT-1)*SCREEN_WIDTH+i][0] = ' ';
@@ -351,6 +356,30 @@ void draw_statusbar(const char *search_string)
     screen_y = SCREEN_HEIGHT - 1;
     screen_x = 2;
 
+    for (int i=0; keys[i].key != NULL; ++i) {
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
+        screen_print(keys[i].key);
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
+        screen_print(" ");
+        screen_print(keys[i].func);
+
+        screen_print("  ");
+    }
+
+    if (search_string != NULL) {
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
+        screen_print("Search: ");
+        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
+        screen_print(search_string);
+        enable_blinking_cursor(screen_x, screen_y);
+        screen_print("  ");
+    }
+
+    screen_attr = save;
+}
+
+void draw_statusbar(const char *search_string)
+{
     static const struct HotKey
     TEXT_KEYS[] = {
         { "ESC", "Back" },
@@ -386,26 +415,7 @@ void draw_statusbar(const char *search_string)
 
     const struct HotKey *keys = search_string ? SEARCH_KEYS : KEYS;
 
-    for (int i=0; keys[i].key != NULL; ++i) {
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
-        screen_print(keys[i].key);
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
-        screen_print(" ");
-        screen_print(keys[i].func);
-
-        screen_print("  ");
-    }
-
-    if (search_string != NULL) {
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_KEY;
-        screen_print("Search: ");
-        screen_attr = (COLOR_HOTKEY_BG << 4) | COLOR_HOTKEY_LABEL;
-        screen_print(search_string);
-        enable_blinking_cursor(screen_x, screen_y);
-        screen_print("  ");
-    }
-
-    screen_attr = save;
+    draw_statusbar_internal(keys, search_string);
 }
 
 static void
@@ -698,8 +708,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
         }
     }
 
-    int post_y = screen_y;
-
     screen_x = x;
     screen_y = y; y += 1;
 
@@ -833,6 +841,8 @@ sample_320_200(const uint8_t __far *backbuffer, long x, long y, long w, long h)
 static void
 present_vga(bool ui)
 {
+    // TODO: Blinking cursor
+
     uint32_t w = VGA_WIDTH;
     uint32_t h = VGA_HEIGHT;
 
@@ -957,6 +967,8 @@ present_vga(bool ui)
 static void
 present_vesa(bool ui)
 {
+    // TODO: Blinking cursor
+
     uint32_t w = VESA_WIDTH;
     uint32_t h = VESA_HEIGHT;
 
@@ -1890,6 +1902,7 @@ enum GameLaunchChoice {
     CHOICE_BACK = 0,
     CHOICE_LAUNCH = 1,
     CHOICE_README = 2,
+    CHOICE_INSTALL = 3,
     MAX_CHOICES,
 };
 
@@ -1898,6 +1911,7 @@ GAME_LAUNCH_CHOICE[] = {
     "(..)",
     "Launch",
     "Open README",
+    "Copy to hard disk",
 };
 
 struct GameLaunchChoices {
@@ -2083,6 +2097,651 @@ show_screenshots(struct GameCatalog *cat, int game)
         // invalidate screen buffer to force a full-screen update
         memset(SCREEN_BUFFER_OLD, 0, sizeof(SCREEN_BUFFER_OLD));
     }
+}
+
+/* UI Widgets for Copy Progress */
+
+static void
+dialog_render(int x, int y, int width, int height, const char *frame_label, int active)
+{
+    screen_x = x;
+    screen_y = y;
+
+    int bg = COLOR_DEFAULT_BG;
+    int fg = COLOR_DEFAULT_FG;
+    int bg_frame_label = COLOR_FRAME_LABEL_BG;
+    int fg_frame_label = COLOR_FRAME_LABEL_FG;
+
+    if (!active) {
+        bg = COLOR_DISABLED_BG;
+        fg = COLOR_DISABLED_SOFT_CONTRAST;
+        bg_frame_label = COLOR_DISABLED_SOFT_CONTRAST;
+        fg_frame_label = bg;
+    }
+
+    screen_attr = (bg << 4) | fg;
+
+    // top bar
+    int save = screen_attr;
+    screen_putch(0xc9);
+    for (int j=0; j<width; ++j) {
+        screen_putch(0xcd);
+    }
+    screen_putch(0xbb);
+
+    if (*frame_label) {
+        screen_x = x + (width - strlen(frame_label) - 2) / 2;
+
+        int save2 = screen_attr;
+        screen_attr = (bg_frame_label << 4) | fg_frame_label;
+        screen_putch(' ');
+        screen_print(frame_label);
+        screen_putch(' ');
+        screen_attr = save2;
+    }
+
+    screen_attr = save;
+
+    // dialog body
+    for (int j=0; j<height; ++j) {
+        screen_x = x + 1;
+        screen_y = y + 1 + j;
+        left_border(fg, bg);
+        for (int j=0; j<width; ++j) {
+            screen_putch(' ');
+        }
+        right_border(fg, bg);
+    }
+
+    screen_x = x;
+    screen_y = y + height + 1;
+
+    // bottom bar
+    save = screen_attr;
+    screen_attr = (bg << 4) | fg;
+    screen_putch(0xc8);
+    for (int j=0; j<width; ++j) {
+        screen_putch(0xcd);
+    }
+    screen_putch(0xbc);
+    right_shadow(2);
+
+    screen_x = x + 2;
+    screen_y = y + height + 2;
+    right_shadow(width + 2);
+}
+
+static void
+progressbar_render(int x, int y, int width, unsigned long pos, unsigned long total, const char *msg)
+{
+    int fg = COLOR_DEFAULT_FG;
+    int bg_cursor = COLOR_CURSOR_BG;
+    int fg_cursor = COLOR_CURSOR_FG;
+
+    screen_x = x;
+    screen_y = y;
+
+    if (pos > 1024 && total > 1024) {
+        pos >>= 10;
+        total >>= 10;
+    }
+
+    int fill = (total != 0) ? (pos * (unsigned long)width / total) : 0;
+
+    int text_length = strlen(msg);
+    int text_offset = (width - text_length) / 2;
+
+    for (int i=0; i<width; ++i) {
+        if (i < fill) {
+            screen_attr = (fg_cursor << 4) | fg;
+        } else {
+            screen_attr = (fg << 4) | fg_cursor;
+        }
+        int off = i - text_offset;
+        if (off >= 0 && off < text_length) {
+            screen_putch(msg[off]);
+        } else {
+            screen_putch(' ');
+        }
+    }
+}
+
+static void
+textbox_render(int x, int y, int width, const char *text, int active)
+{
+    int bg = COLOR_DEFAULT_BG;
+    int fg = COLOR_DEFAULT_FG;
+    int fg_cursor = COLOR_CURSOR_FG;
+
+    screen_x = x;
+    screen_y = y;
+
+    // reverse video text box
+    if (active) {
+        screen_attr = (fg << 4) | fg_cursor;
+    } else {
+        screen_attr = (fg << 4) | bg;
+    }
+
+    screen_putch(' ');
+    for (int i=0; i<width-1; ++i) {
+        if (text) {
+            if (!text[i]) {
+                enable_blinking_cursor(screen_x, screen_y);
+                text = NULL;
+            } else {
+                screen_putch(text[i]);
+            }
+        } else {
+            screen_putch(' ');
+        }
+    }
+}
+
+static int
+label_render(int x, int y, const char *text)
+{
+    int bg = COLOR_DEFAULT_BG;
+    int fg = COLOR_DEFAULT_FG;
+
+    screen_x = x;
+    screen_y = y;
+
+    screen_attr = (bg << 4) | fg;
+
+    screen_print(text);
+
+    return x + strlen(text);
+}
+
+static bool
+edit_text(int ch, char *buf, size_t len)
+{
+    int pos = strlen(buf);
+
+    if (pos > 0 && ch == KEY_BACKSPACE) {
+        buf[--pos] = '\0';
+        return true;
+    } else if (pos < len - 1 && (ch == '\\' || ch == '.' || ch == '_' || ch == '-' || ch == ':' ||
+                                 (ch >= 'a' && ch <= 'z') ||
+                                 (ch >= 'A' && ch <= 'Z') ||
+                                 (ch >= '0' && ch <= '9'))) {
+        buf[pos++] = ch;
+        buf[pos] = '\0';
+        return true;
+    }
+
+    return false;
+}
+
+/* File Copy Logic */
+
+struct CopyItem {
+    bool is_dir;
+    char *path;
+    unsigned long size;
+    struct CopyItem *next;
+};
+
+struct CopyItemCollection {
+    struct CopyItem *head;
+    struct CopyItem *tail;
+};
+
+struct CopyProgressState {
+    void (*render_progress)(struct CopyProgressState *);
+    void (*print_error_message)(struct CopyProgressState *, const char *fmt, ...);
+
+    unsigned long files_done;
+    unsigned long nfiles;
+
+    unsigned long bytes_done;
+    unsigned long source_size;
+
+    unsigned long current_bytes_done;
+    unsigned long current_size;
+
+    const char *source_path;
+    const char *destination_path;
+    const char *current_filename;
+
+    int x;
+    int y;
+    int width;
+    int height;
+
+    unsigned long chunk;
+    char *buf;
+
+    struct CopyItemCollection *items;
+};
+
+static void
+single_mkdir(const char *path)
+{
+#if defined(DJGPP)
+    mkdir(path, 0777);
+#else
+    mkdir(path);
+#endif
+}
+
+static void
+recursive_mkdir(const char *path)
+{
+    char *tmp = strdup(path);
+    for (int i=0; tmp[i]; ++i) {
+        if (tmp[i] == '\\') {
+            tmp[i] = '\0';
+            single_mkdir(tmp);
+            tmp[i] = '\\';
+        }
+    }
+    single_mkdir(tmp);
+    free(tmp);
+}
+
+static void
+copy_item_collection_append(struct CopyItemCollection *items, bool is_dir, const char *filename, unsigned long size)
+{
+    struct CopyItem *cur = malloc(sizeof(struct CopyItem));
+    cur->is_dir = is_dir;
+    cur->path = strdup(filename);
+    cur->size = size;
+    cur->next = NULL;
+
+    if (items->tail != NULL) {
+        items->tail->next = cur;
+        items->tail = cur;
+    } else {
+        items->head = items->tail = cur;
+    }
+}
+
+static void
+copy_item_collection_free_items(struct CopyItemCollection *items)
+{
+    struct CopyItem *cur = items->head;
+    while (cur) {
+        struct CopyItem *prev = cur;
+        cur = cur->next;
+
+        free(prev->path);
+        free(prev);
+    }
+
+    items->head = items->tail = NULL;
+}
+
+static void
+copy_item_collection_append_walk(struct CopyItemCollection *items, const char *source_path)
+{
+    // start with the source path
+    copy_item_collection_append(items, true, source_path, 0);
+
+    struct CopyItem *cur = items->head;
+    while (cur != NULL) {
+        if (cur->is_dir) {
+            char path[FILENAME_MAX];
+            sprintf(path, "%s\\*.*", cur->path);
+
+            struct find_t ft;
+            unsigned int res = _dos_findfirst(path, _A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_SUBDIR | _A_ARCH, &ft);
+            while (res == 0) {
+                if (strcmp(ft.name, ".") != 0 && strcmp(ft.name, "..") != 0) {
+                    sprintf(path, "%s\\%s", cur->path, ft.name);
+                    copy_item_collection_append(items, (ft.attrib & _A_SUBDIR) != 0, path, ft.size);
+                }
+                res = _dos_findnext(&ft);
+            }
+        }
+
+        cur = cur->next;
+    }
+}
+
+static void
+copy_single_file(struct CopyProgressState *cps,
+        const char *src, const char *dst, unsigned long size)
+{
+    cps->current_filename = dst + strlen(cps->destination_path) + 1;
+
+    cps->current_size = size;
+    cps->current_bytes_done = 0;
+    cps->render_progress(cps);
+
+    FILE *ifp = fopen(src, "rb");
+    if (!ifp) {
+        cps->print_error_message(cps, "could not open '%s' for reading", src);
+        cps->current_filename = NULL;
+        return;
+    }
+
+    FILE *ofp = fopen(dst, "wb");
+    if (!ofp) {
+        cps->print_error_message(cps, "could not open '%s' for writing", dst);
+        cps->current_filename = NULL;
+        fclose(ifp);
+        return;
+    }
+
+    long remaining = size;
+    while (remaining > 0) {
+        long len = fread(cps->buf, 1, cps->chunk, ifp);
+        if (len == 0) {
+            if (remaining != 0) {
+                cps->print_error_message(cps, "short read with %lu bytes remaining", remaining);
+            }
+            break;
+        }
+        remaining -= len;
+        long written = fwrite(cps->buf, 1, len, ofp);
+        if (written != len) {
+            cps->print_error_message(cps, "short write (disk full?)");
+            break;
+        }
+        cps->current_bytes_done += written;
+        cps->bytes_done += written;
+        cps->render_progress(cps);
+    }
+    fclose(ofp);
+    fclose(ifp);
+
+    cps->render_progress(cps);
+
+    cps->files_done++;
+    cps->current_filename = NULL;
+}
+
+static void
+copy_game_files(struct CopyProgressState *cps)
+{
+    char dest_path[FILENAME_MAX];
+
+    struct CopyItem *cur = cps->items->head;
+    while (cur) {
+        strcpy(dest_path, cps->destination_path);
+        strcat(dest_path, cur->path + strlen(cps->source_path));
+
+        if (cur->is_dir) {
+            recursive_mkdir(dest_path);
+        } else {
+            copy_single_file(cps, cur->path, dest_path, cur->size);
+        }
+
+        cur = cur->next;
+    }
+
+    // final progress screen
+    cps->render_progress(cps);
+}
+
+/* Copy Progress UI + Helpers */
+
+// https://stackoverflow.com/a/1449849
+static void
+format_commas(unsigned long n, char *out)
+{
+    int c;
+    char buf[32];
+    char *p;
+
+    sprintf(buf, "%lu", n);
+    c = 2 - strlen(buf) % 3;
+    for (p = buf; *p != 0; p++) {
+       *out++ = *p;
+       if (c == 1) {
+           *out++ = ',';
+       }
+       c = (c + 1) % 3;
+    }
+    *--out = 0;
+}
+
+static void
+format_bytes(char *out, unsigned long bytes)
+{
+    format_commas(bytes, out);
+    strcat(out, " bytes");
+}
+
+static void
+copy_progress_state_render_progress(struct CopyProgressState *cps)
+{
+    char progress_msg[80];
+
+    if (cps->files_done == cps->nfiles) {
+        sprintf(progress_msg, "%d file%s copied", cps->nfiles, (cps->nfiles == 1) ? "" : "s");
+    } else {
+        sprintf(progress_msg, "Copying file %d of %d: ", cps->files_done+1, cps->nfiles);
+        format_bytes(progress_msg + strlen(progress_msg), cps->current_size);
+    }
+    progressbar_render(cps->x + 2, cps->y + 2, cps->width - 3,
+            cps->bytes_done+1ul, cps->source_size,
+            progress_msg);
+
+    progressbar_render(cps->x + 2, cps->y + 4, cps->width - 3,
+            cps->current_bytes_done+1ul, cps->current_size,
+            cps->current_filename ? cps->current_filename : cps->destination_path);
+    present(true, ui_mode);
+}
+
+static void
+copy_progress_state_print_error_message(struct CopyProgressState *cps, const char *fmt, ...)
+{
+    va_list args;
+
+    screen_x = 0;
+    screen_y++;
+    if (screen_y >= SCREEN_HEIGHT) {
+        screen_y = 0;
+    }
+
+    va_start(args, fmt);
+    char tt[120];
+    vsprintf(tt, fmt, args);
+    screen_print(tt);
+    present(true, ui_mode);
+    getch();
+    va_end(args);
+}
+
+/* Copy Files Flow */
+
+static void
+install_game_flow(const char *title, struct GameCatalog *cat, int game)
+{
+    render_background(title);
+
+    static const struct HotKey
+    INSTALL_KEYS[] = {
+        { "Esc", "Exit" },
+        { "Enter", "Install" },
+        { NULL, NULL },
+    };
+
+    static const struct HotKey
+    NO_KEYS[] = {
+        { NULL, NULL },
+    };
+
+    static const struct HotKey
+    DONE_KEYS[] = {
+        { "Copying files done.", "Press ENTER to return to menu." },
+        { NULL, NULL },
+    };
+
+    draw_statusbar_internal(INSTALL_KEYS, NULL);
+
+    int width = SCREEN_WIDTH * 3 / 4;
+    int height = 7;
+    int x = (SCREEN_WIDTH - width) / 2 - 1;
+    int y = 3;
+
+    static char source_path[80];
+    unsigned drive;
+    _dos_getdrive(&drive);
+    sprintf(source_path, "%c:\\", 'A' + drive - 1);
+    strcat(source_path, cat->strings->d[cat->games[game].prefix_idx]);
+    strcat(source_path, cat->ids->d[game]);
+    for (int i=0; source_path[i]; ++i) {
+        if (source_path[i] == '/') {
+            source_path[i] = '\\';
+        }
+    }
+
+    struct CopyItemCollection items;
+    items.head = items.tail = NULL;
+    copy_item_collection_append_walk(&items, source_path);
+
+    unsigned long nfiles = 0, source_size = 0;
+    struct CopyItem *cur = items.head;
+    while (cur != NULL) {
+        if (!cur->is_dir) {
+            nfiles++;
+            source_size += cur->size;
+        }
+
+        cur = cur->next;
+    }
+
+    static char source_size_string[80];
+    memset(source_size_string, 0, sizeof(source_size_string));
+    format_bytes(source_size_string, source_size);
+
+    static char destination_path[80];
+    strcpy(destination_path, "C:\\games\\");
+    strcat(destination_path, cat->ids->d[game]);
+
+    static char destination_free_string[80];
+    memset(destination_free_string, 0, sizeof(destination_free_string));
+
+    static char number_items_string[80];
+    sprintf(number_items_string, "%lu file%s, %s", nfiles, (nfiles==1)?"":"s", source_size_string);
+
+    while (true) {
+        struct diskfree_t df;
+        if (toupper(destination_path[0]) >= 'A' &&
+                toupper(destination_path[0]) <= 'Z' &&
+                destination_path[1] == ':') {
+            if (_dos_getdiskfree(1 + (toupper(destination_path[0]) - 'A'), &df) == 0) {
+                memset(destination_free_string, 0, sizeof(destination_free_string));
+                format_bytes(destination_free_string,
+                        (unsigned long)df.bytes_per_sector *
+                        (unsigned long)df.sectors_per_cluster *
+                        (unsigned long)df.avail_clusters);
+            }
+        } else {
+            // relative path, current drive
+            if (_dos_getdiskfree(0, &df) == 0) {
+                memset(destination_free_string, 0, sizeof(destination_free_string));
+                format_bytes(destination_free_string,
+                        (unsigned long)df.bytes_per_sector *
+                        (unsigned long)df.sectors_per_cluster *
+                        (unsigned long)df.avail_clusters);
+            }
+        }
+
+        dialog_render(x, y, width, height, "Copy to Hard Disk", 1);
+
+        int xx = x + 4;
+        int yy = y + 2;
+
+        int textbox_len = width - 20;
+
+        textbox_render(label_render(xx, yy, "     Source:") + 1, yy, textbox_len, source_path, false);
+        yy += 1;
+        label_render(  label_render(xx, yy, "       Size:") + 2, yy, number_items_string);
+        yy += 2;
+        int destination_yy = yy;
+        textbox_render(label_render(xx, yy, "Destination:") + 1, yy, textbox_len, destination_path, true);
+        yy += 1;
+        label_render(  label_render(xx, yy, " Free space:") + 2, yy, destination_free_string);
+
+        present(true, ui_mode);
+
+        int ch = getch();
+        if (ch == 0) {
+            ch = 0x100 | getch();
+        }
+
+        if (ch == KEY_ESCAPE) {
+            break;
+        } else if (ch == KEY_ENTER) {
+            // TODO: Check free disk space and other sanity checks
+
+            draw_statusbar_internal(NO_KEYS, NULL);
+
+            // grey out the destination field
+            textbox_render(label_render(xx, destination_yy, "Destination:") + 1,
+                    destination_yy, textbox_len, destination_path, false);
+            disable_blinking_cursor();
+
+            width = SCREEN_WIDTH - 8;
+            x = (SCREEN_WIDTH - width) / 2 - 1;
+
+            y += height + 4;
+            height = 5;
+
+            dialog_render(x, y, width, height, "Progress", 1);
+
+            struct CopyProgressState cps;
+            cps.render_progress = copy_progress_state_render_progress;
+            cps.print_error_message = copy_progress_state_print_error_message;
+            cps.files_done = 0;
+            cps.nfiles = nfiles;
+            cps.bytes_done = 0;
+            cps.source_size = source_size;
+            cps.current_bytes_done = 0;
+            cps.current_size = 0;
+            cps.source_path = source_path;
+            cps.destination_path = destination_path;
+            cps.current_filename = NULL;
+            cps.x = x;
+            cps.y = y;
+            cps.width = width;
+            cps.height = height;
+            cps.items = &items;
+
+            // chunk size for file copy operations
+            cps.chunk = 16ul * 1024ul;
+            cps.buf = malloc(cps.chunk);
+
+            copy_game_files(&cps);
+
+            free(cps.buf);
+
+            width = 45;
+            height = 4;
+            x = (SCREEN_WIDTH - width) / 2 - 1;
+            y = 16;
+
+            draw_statusbar_internal(DONE_KEYS, NULL);
+            present(true, ui_mode);
+
+            // empty keyboard buffer after long-running operation
+            while (kbhit()) getch();
+
+            while (true) {
+                int ch = getch();
+                if (ch == 0) {
+                    ch = 0x100 | getch();
+                }
+
+                if (ch == KEY_ENTER || ch == KEY_ESCAPE) {
+                    break;
+                }
+            }
+
+            break;
+        } else {
+            edit_text(ch, destination_path, textbox_len - 3);
+        }
+    }
+
+    copy_item_collection_free_items(&items);
+
+    disable_blinking_cursor();
 }
 
 int main(int argc, char *argv[])
@@ -2325,6 +2984,11 @@ int main(int argc, char *argv[])
                 glc.choices[glc.count++] = CHOICE_README;
             }
 
+#if defined(DJGPP)
+            /* broken/untested on 16-bit openwatcom */
+            glc.choices[glc.count++] = CHOICE_INSTALL;
+#endif
+
             int selection = choice_dialog(-1, -1, buf, &cds, glc.count,
                     get_text_game, &gtgud,
                     get_label_game, &glc,
@@ -2335,6 +2999,8 @@ int main(int argc, char *argv[])
             if (glc.choices[selection] == CHOICE_BACK) {
                 ipc_buffer_pop_menu_trail_entry();
                 game = -1;
+            } else if (glc.choices[selection] == CHOICE_INSTALL) {
+                install_game_flow(buf, cat, game);
             } else if (glc.choices[selection] == CHOICE_LAUNCH || glc.choices[selection] == CHOICE_README) {
                 // TODO: Index 0 forced here, so that the first choice (back)
                 // is pre-selected when we return from the launched game
