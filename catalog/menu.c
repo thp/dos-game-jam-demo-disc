@@ -2192,7 +2192,11 @@ progressbar_render(int x, int y, int width, unsigned long pos, unsigned long tot
         if (off >= 0 && off < text_length) {
             screen_putch(msg[off]);
         } else {
-            screen_putch(' ');
+            if ((ui_mode == MENU_MODE_TEXT) || off == -1 || off == text_length) {
+                screen_putch(' ');
+            } else {
+                screen_putch(0xdb);
+            }
         }
     }
 }
