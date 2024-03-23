@@ -2646,7 +2646,21 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
     format_bytes(source_size_string, source_size);
 
     static char destination_path[80];
-    strcpy(destination_path, "C:\\games\\");
+    if (destination_path[0] != '\0') {
+        char *cur = destination_path + strlen(destination_path) - 1;
+        // strip all trailing backslashes (if any)
+        while (cur >= destination_path && *cur == '\\') {
+            *cur-- = '\0';
+        }
+        // strip the last path component
+        while (cur >= destination_path && *cur != '\\' && *cur != ':') {
+            *cur-- = '\0';
+        }
+    }
+
+    if (!strlen(destination_path)) {
+        strcpy(destination_path, "C:\\games\\");
+    }
     strcat(destination_path, cat->ids->d[game]);
 
     static char destination_free_string[80];
