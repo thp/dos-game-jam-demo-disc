@@ -6,6 +6,7 @@
  **/
 
 #include <stdlib.h>
+#include <string.h>
 
 static uint8_t
 _game_catalog_read_u8(struct GameCatalog *cat)
@@ -115,6 +116,8 @@ game_catalog_parse(char *buf, int len)
     if (!cat) {
         return NULL;
     }
+
+    memset(cat, 0, sizeof(*cat));
 
     cat->buf = buf;
     cat->buf_ptr = buf;
