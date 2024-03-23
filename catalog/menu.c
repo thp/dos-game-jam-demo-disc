@@ -2478,15 +2478,17 @@ static void
 copy_game_files(struct CopyProgressState *cps)
 {
     char source_path[FILENAME_MAX];
+    strcpy(source_path, cps->source_path);
+    char *src_tail = source_path + strlen(source_path);
+
     char dest_path[FILENAME_MAX];
+    strcpy(dest_path, cps->destination_path);
+    char *dst_tail = dest_path + strlen(dest_path);
 
     struct CopyItem far *cur = cps->items->head;
     while (cur) {
-        strcpy(dest_path, cps->destination_path);
-        _fstrcat(dest_path, cur->path);
-
-        strcpy(source_path, cps->source_path);
-        _fstrcat(source_path, cur->path);
+        _fstrcpy(src_tail, cur->path);
+        _fstrcpy(dst_tail, cur->path);
 
         if (cur->is_dir) {
             recursive_mkdir(dest_path);
