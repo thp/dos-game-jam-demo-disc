@@ -45,18 +45,4 @@ void vbe_setwin(int offs);
 void vbe_setcolor(int idx, int r, int g, int b);
 void vbe_setcolors(int idx, int count, unsigned char *cmap);
 
-void vbe_vsync(void);
-#pragma aux vbe_vsync = \
-	"mov dx, 0x3da" \
-	"invb:" \
-	"in al, dx" \
-	"and al, 8" \
-	"jnz invb" \
-	"novb:" \
-	"in al, dx" \
-	"and al, 8" \
-	"jz novb" \
-	modify [al dx];
-
-
 #endif	/* VBE_H_ */

@@ -30,7 +30,7 @@ menu.exe: menu.c gamectlg.c
 	rm -f menu.o
 
 menu32.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ menu.c gamectlg.c -O2 $(CFLAGS_VERSION)
+	i586-pc-msdosdjgpp-gcc -o $@ menu.c gamectlg.c -O2 $(CFLAGS_VERSION) -Wall -Wextra -Wpedantic -Werror -fanalyzer
 	i586-pc-msdosdjgpp-strip -s -x $@
 
 start.exe: start.c chain.o

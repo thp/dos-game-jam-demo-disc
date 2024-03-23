@@ -3,22 +3,22 @@
 #include <sys/nearptr.h>
 #include <crt0.h>
 #define _fstrcmp strcmp
+#define _fstrdup strdup
 #define _fstrcpy strcpy
 #define _fstrcat strcat
 #define _fmemcpy memcpy
 #define _fmalloc malloc
+#define _ffree free
 #define far
 #define __far
 #define _Packed __attribute__((packed))
 #define huge
 #define halloc calloc
 #define hfree free
-void * MK_FP (unsigned short seg, unsigned short ofs)
+void *
+MK_FP(unsigned short seg, unsigned short ofs)
 {
-if ( !(_crt0_startup_flags & _CRT0_FLAG_NEARPTR) )
-  if (!__djgpp_nearptr_enable ())
-    return (void *)0;
-return (void *) (seg*16 + ofs + __djgpp_conventional_base);
+    return (void *)(__djgpp_conventional_base + seg*16 + ofs);
 }
 #endif
 
@@ -227,7 +227,7 @@ is_fading()
 }
 
 static void
-screen_putch(char ch)
+screen_putch(unsigned char ch)
 {
     if (ch == '\n') {
         screen_x = 0;
@@ -264,8 +264,7 @@ print_parents_first(char *buf, struct GameCatalog *cat, struct GameCatalogGroup 
 {
     if (group->parent_group) {
         print_parents_first(buf, cat, group->parent_group);
-        char sep[] = { ' ', 0xaf, ' ', 0x00 };
-        strcat(buf, sep);
+        strcat(buf, " \xaf ");
     }
 
     strcat(buf, cat->strings->d[group->title_idx]);
@@ -274,7 +273,7 @@ print_parents_first(char *buf, struct GameCatalog *cat, struct GameCatalogGroup 
 struct SearchState {
     int now_searching;
     char search_str[30];
-    int search_pos;
+    unsigned int search_pos;
     int previous_input;
     int saved_cursor;
     int saved_offset;
@@ -282,14 +281,7 @@ struct SearchState {
 
 void reset_search_state(struct SearchState *state)
 {
-    state->now_searching = 0;
-    for (int i=0; i<sizeof(state->search_str); ++i) {
-        state->search_str[i] = 0;
-    }
-    state->search_pos = 0;
-    state->previous_input = 0;
-    state->saved_cursor = 0;
-    state->saved_offset = 0;
+    memset(state, 0, sizeof(*state));
 }
 
 struct ChoiceDialogState {
@@ -620,8 +612,6 @@ choice_dialog_render(int x, int y, struct ChoiceDialogState *state, int n,
     if (end > n) {
         end = n;
     }
-
-    int pre_y = screen_y;
 
     for (int i=begin; i<end; ++i) {
         int save = screen_attr;
@@ -1105,7 +1095,7 @@ present_vesa(bool ui)
 }
 
 static void
-present_text(bool ui)
+present_text()
 {
     short __far *screen = (short __far *)MK_FP(0xb800ul, 0x0000ul);
     _fmemcpy(screen, SCREEN_BUFFER, TEXT_SCREEN_WIDTH*TEXT_SCREEN_HEIGHT*2);
@@ -1121,7 +1111,7 @@ present(bool ui, enum MenuMode mode)
     update_palette();
 
     if (mode == MENU_MODE_TEXT) {
-        present_text(ui);
+        present_text();
     } else if (mode == MENU_MODE_VGA) {
         present_vga(ui);
     } else if (mode == MENU_MODE_VESA) {
@@ -1861,8 +1851,7 @@ get_text_game(int i, void *user_data)
     if (i == 0) {
         sprintf(fmt_buf, "%s%s",
                 (game->flags & FLAG_IS_32_BITS) ? "386+" : "8088+",
-                (game->flags & FLAG_IS_MULTIPLAYER) ? ", multiplayer" : "",
-                ud->cat->strings->d[game->genre_idx]);
+                (game->flags & FLAG_IS_MULTIPLAYER) ? ", multiplayer" : "");
 
         if ((game->flags & FLAG_MOUSE_SUPPORTED) != 0) {
             if ((game->flags & FLAG_MOUSE_REQUIRED) != 0) {
@@ -1923,6 +1912,9 @@ const char *
 get_label_game(int i, void *user_data, const char **text_right)
 {
     struct GameLaunchChoices *choices = user_data;
+
+    // Not used for game list
+    (void)text_right;
 
     if (i < choices->count) {
         return GAME_LAUNCH_CHOICE[choices->choices[i]];
@@ -2024,7 +2016,7 @@ vga_load_dat(const char *filename, uint8_t __far *out, int palette_offset)
         for (long y=0; y<200; ++y) {
             fread(buf, sizeof(buf), 1, fp);
 
-            for (int i=0; i<sizeof(buf); ++i) {
+            for (size_t i=0; i<sizeof(buf); ++i) {
                 buf[i] += palette_offset;
             }
 
@@ -2175,7 +2167,6 @@ static void
 progressbar_render(int x, int y, int width, unsigned long pos, unsigned long total, const char *msg)
 {
     int fg = COLOR_DEFAULT_FG;
-    int bg_cursor = COLOR_CURSOR_BG;
     int fg_cursor = COLOR_CURSOR_FG;
 
     screen_x = x;
@@ -2257,7 +2248,7 @@ label_render(int x, int y, const char *text)
 static bool
 edit_text(int ch, char *buf, size_t len)
 {
-    int pos = strlen(buf);
+    size_t pos = strlen(buf);
 
     if (pos > 0 && ch == KEY_BACKSPACE) {
         buf[--pos] = '\0';
@@ -2278,14 +2269,14 @@ edit_text(int ch, char *buf, size_t len)
 
 struct CopyItem {
     bool is_dir;
-    char *path;
+    char far *path;
     unsigned long size;
-    struct CopyItem *next;
+    struct CopyItem far *next;
 };
 
 struct CopyItemCollection {
-    struct CopyItem *head;
-    struct CopyItem *tail;
+    struct CopyItem far *head;
+    struct CopyItem far *tail;
 };
 
 struct CopyProgressState {
@@ -2327,26 +2318,43 @@ single_mkdir(const char *path)
 }
 
 static void
-recursive_mkdir(const char *path)
+recursive_mkdir(char *path)
 {
-    char *tmp = strdup(path);
-    for (int i=0; tmp[i]; ++i) {
-        if (tmp[i] == '\\') {
-            tmp[i] = '\0';
-            single_mkdir(tmp);
-            tmp[i] = '\\';
+    for (int i=0; path[i]; ++i) {
+        if (path[i] == '\\') {
+            path[i] = '\0';
+            single_mkdir(path);
+            path[i] = '\\';
         }
     }
-    single_mkdir(tmp);
-    free(tmp);
+    single_mkdir(path);
 }
 
 static void
+copy_progress_state_print_error_message(struct CopyProgressState *cps, const char *fmt, ...)
+#if defined(DJGPP)
+    __attribute__((format(printf,2,3)))
+#endif
+;
+
+static bool
 copy_item_collection_append(struct CopyItemCollection *items, bool is_dir, const char *filename, unsigned long size)
 {
+    char far *path = _fstrdup(filename);
+
+    if (!path) {
+        return false;
+    }
+
     struct CopyItem *cur = malloc(sizeof(struct CopyItem));
+
+    if (!cur) {
+        _ffree(path);
+        return false;
+    }
+
     cur->is_dir = is_dir;
-    cur->path = strdup(filename);
+    cur->path = path;
     cur->size = size;
     cur->next = NULL;
 
@@ -2356,41 +2364,52 @@ copy_item_collection_append(struct CopyItemCollection *items, bool is_dir, const
     } else {
         items->head = items->tail = cur;
     }
+
+    return true;
 }
 
 static void
 copy_item_collection_free_items(struct CopyItemCollection *items)
 {
-    struct CopyItem *cur = items->head;
+    struct CopyItem far *cur = items->head;
     while (cur) {
-        struct CopyItem *prev = cur;
+        struct CopyItem far *prev = cur;
         cur = cur->next;
 
-        free(prev->path);
-        free(prev);
+        _ffree(prev->path);
+        _ffree(prev);
     }
 
     items->head = items->tail = NULL;
 }
 
-static void
+static bool
 copy_item_collection_append_walk(struct CopyItemCollection *items, const char *source_path)
 {
     // start with the source path
-    copy_item_collection_append(items, true, source_path, 0);
+    if (!copy_item_collection_append(items, true, "", 0)) {
+        return false;
+    }
 
-    struct CopyItem *cur = items->head;
+    struct CopyItem far *cur = items->head;
     while (cur != NULL) {
         if (cur->is_dir) {
             char path[FILENAME_MAX];
-            sprintf(path, "%s\\*.*", cur->path);
+            strcpy(path, source_path);
+            strcat(path, "\\");
+            _fstrcat(path, cur->path);
+            strcat(path, "\\*.*");
 
             struct find_t ft;
             unsigned int res = _dos_findfirst(path, _A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_SUBDIR | _A_ARCH, &ft);
             while (res == 0) {
                 if (strcmp(ft.name, ".") != 0 && strcmp(ft.name, "..") != 0) {
-                    sprintf(path, "%s\\%s", cur->path, ft.name);
-                    copy_item_collection_append(items, (ft.attrib & _A_SUBDIR) != 0, path, ft.size);
+                    _fstrcpy(path, cur->path);
+                    strcat(path, "\\");
+                    strcat(path, ft.name);
+                    if (!copy_item_collection_append(items, (ft.attrib & _A_SUBDIR) != 0, path, ft.size)) {
+                        return false;
+                    }
                 }
                 res = _dos_findnext(&ft);
             }
@@ -2398,6 +2417,8 @@ copy_item_collection_append_walk(struct CopyItemCollection *items, const char *s
 
         cur = cur->next;
     }
+
+    return true;
 }
 
 static void
@@ -2456,17 +2477,21 @@ copy_single_file(struct CopyProgressState *cps,
 static void
 copy_game_files(struct CopyProgressState *cps)
 {
+    char source_path[FILENAME_MAX];
     char dest_path[FILENAME_MAX];
 
-    struct CopyItem *cur = cps->items->head;
+    struct CopyItem far *cur = cps->items->head;
     while (cur) {
-        strcpy(dest_path, cps->destination_path);
-        strcat(dest_path, cur->path + strlen(cps->source_path));
+        _fstrcpy(dest_path, cps->destination_path);
+        _fstrcat(dest_path, cur->path);
+
+        _fstrcpy(source_path, cps->source_path);
+        _fstrcat(source_path, cur->path);
 
         if (cur->is_dir) {
             recursive_mkdir(dest_path);
         } else {
-            copy_single_file(cps, cur->path, dest_path, cur->size);
+            copy_single_file(cps, source_path, dest_path, cur->size);
         }
 
         cur = cur->next;
@@ -2511,9 +2536,9 @@ copy_progress_state_render_progress(struct CopyProgressState *cps)
     char progress_msg[80];
 
     if (cps->files_done == cps->nfiles) {
-        sprintf(progress_msg, "%d file%s copied", cps->nfiles, (cps->nfiles == 1) ? "" : "s");
+        sprintf(progress_msg, "%lu file%s copied", cps->nfiles, (cps->nfiles == 1) ? "" : "s");
     } else {
-        sprintf(progress_msg, "Copying file %d of %d: ", cps->files_done+1, cps->nfiles);
+        sprintf(progress_msg, "Copying file %lu of %lu: ", cps->files_done+1, cps->nfiles);
         format_bytes(progress_msg + strlen(progress_msg), cps->current_size);
     }
     progressbar_render(cps->x + 2, cps->y + 2, cps->width - 3,
@@ -2529,6 +2554,8 @@ copy_progress_state_render_progress(struct CopyProgressState *cps)
 static void
 copy_progress_state_print_error_message(struct CopyProgressState *cps, const char *fmt, ...)
 {
+    (void)cps;
+
     va_list args;
 
     screen_x = 0;
@@ -2592,10 +2619,13 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
 
     struct CopyItemCollection items;
     items.head = items.tail = NULL;
-    copy_item_collection_append_walk(&items, source_path);
+    if (!copy_item_collection_append_walk(&items, source_path)) {
+        copy_progress_state_print_error_message(NULL, "Out of memory while generating file list");
+        goto exit;
+    }
 
     unsigned long nfiles = 0, source_size = 0;
-    struct CopyItem *cur = items.head;
+    struct CopyItem far *cur = items.head;
     while (cur != NULL) {
         if (!cur->is_dir) {
             nfiles++;
@@ -2616,7 +2646,7 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
     static char destination_free_string[80];
     memset(destination_free_string, 0, sizeof(destination_free_string));
 
-    static char number_items_string[80];
+    static char number_items_string[80 + 17];
     sprintf(number_items_string, "%lu file%s, %s", nfiles, (nfiles==1)?"":"s", source_size_string);
 
     while (true) {
@@ -2705,7 +2735,18 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
 
             // chunk size for file copy operations
             cps.chunk = 16ul * 1024ul;
-            cps.buf = malloc(cps.chunk);
+            cps.buf = NULL;
+            while (cps.chunk > 16 && !cps.buf) {
+                cps.buf = malloc(cps.chunk);
+                if (cps.buf == NULL) {
+                    cps.chunk >>= 1;
+                }
+            }
+
+            if (cps.buf == NULL) {
+                copy_progress_state_print_error_message(NULL, "Out of memory trying to allocate file buffer");
+                goto exit;
+            }
 
             copy_game_files(&cps);
 
@@ -2739,6 +2780,7 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
         }
     }
 
+exit:
     copy_item_collection_free_items(&items);
 
     disable_blinking_cursor();
@@ -2747,7 +2789,12 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
 int main(int argc, char *argv[])
 {
 #if defined(DJGPP)
-    __djgpp_nearptr_enable();
+    if (!(_crt0_startup_flags & _CRT0_FLAG_NEARPTR)) {
+        if (!__djgpp_nearptr_enable()) {
+            fprintf(stderr, "Cannot enable access to conventional memory.\n");
+            return 1;
+        }
+    }
 #endif
 
     // Empty keyboard buffer
@@ -2773,16 +2820,16 @@ int main(int argc, char *argv[])
 
     if (argc == 2) {
         static struct {
-            int their_ds;
-            int their_offset;
+            unsigned long their_ds;
+            unsigned long their_offset;
         } dos_ipc = { 0, 0 };
 
-        if (sscanf(argv[1], "%x:%x", &dos_ipc.their_ds, &dos_ipc.their_offset) != 2) {
+        if (sscanf(argv[1], "%lx:%lx", &dos_ipc.their_ds, &dos_ipc.their_offset) != 2) {
             dos_ipc.their_ds = 0;
             dos_ipc.their_offset = 0;
         }
 
-        ipc_buffer = (struct IPCBuffer __far *)(MK_FP((uint32_t)dos_ipc.their_ds, (uint32_t)dos_ipc.their_offset));
+        ipc_buffer = (struct IPCBuffer __far *)(MK_FP(dos_ipc.their_ds, dos_ipc.their_offset));
 
         if (ipc_buffer && ipc_buffer->magic != IPC_BUFFER_MAGIC) {
             ipc_buffer = NULL;
@@ -2868,6 +2915,15 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    // cat takes ownership of "buf"
+    struct GameCatalog *cat = game_catalog_parse(buf, len);
+
+    if (!cat) {
+        printf("Failed to parse game catalog\n");
+        getch();
+        exit(1);
+    }
+
     if (ui_mode == MENU_MODE_VGA) {
         union REGS inregs, outregs;
         inregs.h.ah = 0;
@@ -2913,9 +2969,6 @@ int main(int argc, char *argv[])
     } else if (ui_mode == MENU_MODE_TEXT) {
         configure_text_mode();
     }
-
-    // cat takes ownership of "buf"
-    struct GameCatalog *cat = game_catalog_parse(buf, len);
 
     struct GameCatalogGroup *here = cat->grouping;
     int game = -1;
@@ -2984,10 +3037,7 @@ int main(int argc, char *argv[])
                 glc.choices[glc.count++] = CHOICE_README;
             }
 
-#if defined(DJGPP)
-            /* broken/untested on 16-bit openwatcom */
             glc.choices[glc.count++] = CHOICE_INSTALL;
-#endif
 
             int selection = choice_dialog(-1, -1, buf, &cds, glc.count,
                     get_text_game, &gtgud,

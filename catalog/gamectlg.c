@@ -29,6 +29,11 @@ _game_catalog_read_string_list(struct GameCatalog *cat)
     uint16_t n = _game_catalog_read_u16(cat);
 
     struct GameCatalogStrings *result = malloc(sizeof(struct GameCatalogStrings) + n * sizeof(const char *));
+
+    if (!result) {
+        return NULL;
+    }
+
     result->n = n;
 
     // one additional offset that points to the end
@@ -52,6 +57,10 @@ _game_catalog_read_index_list(struct GameCatalog *cat)
 
     struct GameCatalogStringListTable *result = malloc(sizeof(struct GameCatalogStringListTable) + n * sizeof(struct GameCatalogStringList));
 
+    if (!result) {
+        return NULL;
+    }
+
     result->n = n;
 
     for (int i=0; i<n; ++i) {
@@ -71,6 +80,10 @@ _game_catalog_read_groups_recursive(struct GameCatalog *cat, struct GameCatalogG
     uint8_t num_subgroups = _game_catalog_read_u8(cat);
 
     struct GameCatalogGroup *result = malloc(sizeof(struct GameCatalogGroup) + num_subgroups * sizeof(struct GameCatalogGroup *));
+
+    if (!result) {
+        return NULL;
+    }
 
     result->title_idx = title_idx;
     result->num_children = num_children;
@@ -93,7 +106,15 @@ _game_catalog_read_groups_recursive(struct GameCatalog *cat, struct GameCatalogG
 struct GameCatalog *
 game_catalog_parse(char *buf, int len)
 {
+    if (!buf) {
+        return NULL;
+    }
+
     struct GameCatalog *cat = malloc(sizeof(struct GameCatalog));
+
+    if (!cat) {
+        return NULL;
+    }
 
     cat->buf = buf;
     cat->buf_ptr = buf;
@@ -103,17 +124,21 @@ game_catalog_parse(char *buf, int len)
     cat->games = (struct GameCatalogGame *)cat->buf_ptr;
     cat->buf_ptr += cat->n_games * sizeof(struct GameCatalogGame);
 
-    cat->names = _game_catalog_read_string_list(cat);
-    cat->descriptions = _game_catalog_read_string_list(cat);
-    cat->urls = _game_catalog_read_string_list(cat);
-    cat->ids = _game_catalog_read_string_list(cat);
-    cat->readmes = _game_catalog_read_string_list(cat);
-    cat->strings = _game_catalog_read_string_list(cat);
+    if ((cat->names = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
+    if ((cat->descriptions = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
+    if ((cat->urls = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
+    if ((cat->ids = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
+    if ((cat->readmes = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
+    if ((cat->strings = _game_catalog_read_string_list(cat)) == NULL) { goto fail; }
 
-    cat->string_lists = _game_catalog_read_index_list(cat);
-    cat->grouping = _game_catalog_read_groups_recursive(cat, NULL);
+    if ((cat->string_lists = _game_catalog_read_index_list(cat)) == NULL) { goto fail; }
+    if ((cat->grouping = _game_catalog_read_groups_recursive(cat, NULL)) == NULL) { goto fail; }
 
     return cat;
+
+fail:
+    game_catalog_free(cat);
+    return NULL;
 }
 
 static void

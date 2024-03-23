@@ -174,6 +174,7 @@ enable_4bit_background()
             break;
         case DISPLAY_ADAPTER_EGA:
         case DISPLAY_ADAPTER_VGA:
+        case DISPLAY_ADAPTER_VESA:
             {
                 union REGS regs;
                 memset(&regs, 0, sizeof(regs));
