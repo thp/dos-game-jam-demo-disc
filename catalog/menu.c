@@ -2482,10 +2482,10 @@ copy_game_files(struct CopyProgressState *cps)
 
     struct CopyItem far *cur = cps->items->head;
     while (cur) {
-        _fstrcpy(dest_path, cps->destination_path);
+        strcpy(dest_path, cps->destination_path);
         _fstrcat(dest_path, cur->path);
 
-        _fstrcpy(source_path, cps->source_path);
+        strcpy(source_path, cps->source_path);
         _fstrcat(source_path, cur->path);
 
         if (cur->is_dir) {
