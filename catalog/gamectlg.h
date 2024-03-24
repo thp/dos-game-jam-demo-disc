@@ -19,7 +19,7 @@ enum GameCatalogFlags {
     FLAG_REQUIRES_EGA = (1 << 8), // game requires at least EGA graphics
     FLAG_REQUIRES_VGA = (1 << 9), // game requires at least VGA graphics
     FLAG_REQUIRES_VBE1 = (1 << 10), // game requires at least VESA BIOS Extensions
-	FLAG_REQUIRES_VBE2 = (1 << 11),	// game requires at least VBE 2.x
+    FLAG_REQUIRES_VBE2 = (1 << 11),	// game requires at least VBE 2.x
     FLAG_DOSBOX_INCOMPATIBLE = (1 << 12), // game is incompatible with stock DOSBox
 };
 
