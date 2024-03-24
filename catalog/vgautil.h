@@ -126,6 +126,9 @@ static void
 textmode_reset()
 {
     union REGS inregs, outregs;
+    memset(&inregs, 0, sizeof(inregs));
+    memset(&outregs, 0, sizeof(outregs));
+
     inregs.h.ah = 0;
     inregs.h.al = 3;
 
@@ -136,6 +139,9 @@ static void
 enable_blinking_cursor(int x, int y)
 {
     union REGS inregs, outregs;
+    memset(&inregs, 0, sizeof(inregs));
+    memset(&outregs, 0, sizeof(outregs));
+
     inregs.h.ah = 1;
     inregs.h.ch = 0;
     inregs.h.cl = 15;
@@ -153,6 +159,9 @@ static void
 disable_blinking_cursor()
 {
     union REGS inregs, outregs;
+    memset(&inregs, 0, sizeof(inregs));
+    memset(&outregs, 0, sizeof(outregs));
+
     inregs.h.ah = 1;
     inregs.h.ch = 0x3f;
 

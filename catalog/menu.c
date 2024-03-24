@@ -103,6 +103,9 @@ static int
 have_mouse_driver()
 {
     union REGS inregs, outregs;
+    memset(&inregs, 0, sizeof(inregs));
+    memset(&outregs, 0, sizeof(outregs));
+
     inregs.x.ax = 0;
 
     int86(0x33, &inregs, &outregs);
@@ -1581,6 +1584,9 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
     } else if (ch == KEY_F4 && (display_adapter_type == DISPLAY_ADAPTER_VGA || display_adapter_type == DISPLAY_ADAPTER_VESA)) {
         if (ui_mode == MENU_MODE_TEXT) {
             union REGS inregs, outregs;
+            memset(&inregs, 0, sizeof(inregs));
+            memset(&outregs, 0, sizeof(outregs));
+
             inregs.h.ah = 0;
             inregs.h.al = 0x13;
 
@@ -2946,6 +2952,9 @@ int main(int argc, char *argv[])
 
     if (ui_mode == MENU_MODE_VGA) {
         union REGS inregs, outregs;
+        memset(&inregs, 0, sizeof(inregs));
+        memset(&outregs, 0, sizeof(outregs));
+
         inregs.h.ah = 0;
         inregs.h.al = 0x13;
 
