@@ -8,7 +8,7 @@
 #include "gamectlg.h"
 #include "ipc.h"
 #include "vgautil.h"
-#include "mcbutil.h"
+#include "memutil.h"
 #include "cpuutil.h"
 
 #include "chain.h"
