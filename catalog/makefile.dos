@@ -1,0 +1,28 @@
+#
+# makefile.dos: Makefile for building tools under pure DOS
+# You need to install DJGPP and OpenWatcom from the SDKs on the disc.
+# Make sure the environment is set up (DJGPP/WATCOM), and compilers can
+# be found in your %PATH%.
+#
+# Usage: make -f makefile.dos
+#
+
+all: start.exe menu.exe menu32.exe
+
+OWCC_FLAGS := -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s
+GCC_FLAGS := -O2 -Wall -Wextra -Wpedantic -Werror
+
+menu.exe: menu.c gamectlg.c
+	owcc -o $@ $^ $(OWCC_FLAGS)
+
+menu32.exe: menu.c gamectlg.c
+	gcc -o $@ $^ $(GCC_FLAGS)
+	strip -s -x $@
+
+start.exe: start.c chain.o
+	owcc -o $@ $^ $(OWCC_FLAGS)
+
+chain.o: chain.s
+	owcc -c -o $@ $^
+
+.PHONY: all

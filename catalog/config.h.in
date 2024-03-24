@@ -1,0 +1,5 @@
+#pragma once
+
+#define VERSION "%VERSION%"
+#define BUILDDATE "%BUILDDATE%"
+#define BUILDTIME "%BUILDTIME%"

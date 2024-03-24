@@ -4,9 +4,9 @@ default: $(TARGETS)
 
 iso: demodisc.iso
 
-CFLAGS_VERSION += -DVERSION=\"$(shell git describe --always --dirty)\"
-CFLAGS_VERSION += -DBUILDDATE=\"$(shell env LC_ALL=C date +%F)\"
-CFLAGS_VERSION += -DBUILDTIME=\"$(shell env LC_ALL=C date +%R)\"
+VERSION := $(shell git describe --always --dirty)
+BUILDDATE := $(shell env LC_ALL=C date +%F)
+BUILDTIME := $(shell env LC_ALL=C date +%R)
 
 ifeq ($V,1)
 PYTHON_EXTRA := --verbose
@@ -16,8 +16,15 @@ DOSBOX ?= dosbox-x
 
 extra: default pcatalog
 
-menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2dat.py cntshots.py
+menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2dat.py cntshots.py gamectlg.dat config.h makefile.dos
 	zip $@ $^
+
+config.h: config.h.in
+	sed \
+		-e 's/%VERSION%/$(VERSION)/g' \
+		-e 's/%BUILDTIME%/$(BUILDTIME)/g' \
+		-e 's/%BUILDDATE%/$(BUILDDATE)/g' \
+		$^ >$@
 
 gamectlg.dat: csv2dat.py gamectlg.csv
 	python3 $^ $@ $(PYTHON_EXTRA)
@@ -25,16 +32,19 @@ gamectlg.dat: csv2dat.py gamectlg.csv
 pcatalog: pcatalog.c gamectlg.c
 	$(CC) -o $@ $^
 
+menu.c: config.h
+start.c: config.h
+
 menu.exe: menu.c gamectlg.c
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s $(CFLAGS_VERSION)
+	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -O2 -s
 	rm -f menu.o
 
 menu32.exe: menu.c gamectlg.c
-	i586-pc-msdosdjgpp-gcc -o $@ menu.c gamectlg.c -O2 $(CFLAGS_VERSION) -Wall -Wextra -Wpedantic -Werror -fanalyzer
+	i586-pc-msdosdjgpp-gcc -o $@ $^ -O2 -Wall -Wextra -Wpedantic -Werror -fanalyzer
 	i586-pc-msdosdjgpp-strip -s -x $@
 
 start.exe: start.c chain.o
-	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s $(CFLAGS_VERSION) -fm=start.map
+	owcc -o $@ $^ -mcmodel=t -bdos -march=i86 -I$(WATCOM)/h -std=c99 -Os -s -fm=start.map
 	rm -f start.o
 
 chain.o: chain.s
@@ -48,7 +58,7 @@ refresh:
 	python3 cntshots.py
 
 clean:
-	$(RM) pcatalog pcatalog.o gamectlg.o start.o menu.o chain.o start.map $(TARGETS)
+	$(RM) pcatalog pcatalog.o gamectlg.o start.o menu.o chain.o start.map config.h $(TARGETS)
 
 distclean: clean
 	$(RM) demodisc.iso
@@ -59,4 +69,4 @@ run: start.exe menu.exe menu32.exe
 boot: demodisc.iso
 	qemu-system-x86_64 -cdrom $< -device sb16
 
-.PHONY: clean default extra distclean refresh iso run boot
+.PHONY: clean default extra distclean refresh iso run boot config.h

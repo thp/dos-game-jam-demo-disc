@@ -22,7 +22,7 @@ MK_FP(unsigned short seg, unsigned short ofs)
 }
 #endif
 
-
+#include "config.h"
 
 #include "vbe.h"
 #include "vbe.c"

@@ -11,6 +11,8 @@
 #include "memutil.h"
 #include "cpuutil.h"
 
+#include "config.h"
+
 #include "chain.h"
 
 static struct IPCBuffer
