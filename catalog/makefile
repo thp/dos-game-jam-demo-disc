@@ -14,6 +14,19 @@ endif
 
 DOSBOX ?= dosbox-x
 
+SAVEGAMES += DEMO2023/CHRMN242/CHROMONO.SAV
+SAVEGAMES += DEMO2023/CATS10/GAME.SAV
+SAVEGAMES += DEMO2023/DEMOGR11/GAMESAVE.DAT
+SAVEGAMES += DEMO2023/EVILDEMO/DOSBALL.SAV
+SAVEGAMES += DEMO2023/LOON8R66/LOONIES8.HIG
+SAVEGAMES += DEMO2023/LOONXR66/LOONIES8.HIG
+SAVEGAMES += DEMO2023/NEUTTOWR/SAVE.SAV
+SAVEGAMES += DEMO2023/STELD06/STELLAR.SCO
+SAVEGAMES += DEMO2023/STARLITE/STARLITE.CON
+SAVEGAMES += DEMO2023/PARCHB51/PARCHIS.CFG
+SAVEGAMES += DEMO2023/PARCHB51/PARCHIS.HPT
+SAVEGAMES += DEMO2023/FATUMA/HISCORE.DAT
+
 extra: default pcatalog
 
 menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2dat.py cntshots.py gamectlg.dat config.h makefile.dos
@@ -50,7 +63,7 @@ start.exe: start.c chain.o
 chain.o: chain.s
 	owcc -c -o $@ $^
 
-demodisc.iso: $(TARGETS)
+demodisc.iso: $(TARGETS) clean-saves
 	mkisofs -V 'DGJDEMO2023' -sysid 'DOS' -A 'DOS Game Jam Demo Disc 2023' -b FD13BOOT.IMG -o $@ -f layout
 
 refresh:
@@ -59,6 +72,9 @@ refresh:
 
 clean:
 	$(RM) pcatalog pcatalog.o gamectlg.o start.o menu.o chain.o start.map config.h $(TARGETS)
+
+clean-saves:
+	$(RM) $(SAVEGAMES)
 
 distclean: clean
 	$(RM) demodisc.iso
@@ -69,4 +85,4 @@ run: start.exe menu.exe menu32.exe
 boot: demodisc.iso
 	qemu-system-x86_64 -cdrom $< -device sb16
 
-.PHONY: clean default extra distclean refresh iso run boot config.h
+.PHONY: clean default extra distclean refresh iso run boot config.h clean-saves
