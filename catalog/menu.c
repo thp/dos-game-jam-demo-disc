@@ -2652,6 +2652,12 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
     format_bytes(source_size_string, source_size);
 
     static char destination_path[80];
+
+    if (ipc_buffer) {
+        // Restore destination path between invocations
+        _fmemcpy(destination_path, ipc_buffer->copy_destination_path, sizeof(destination_path));
+    }
+
     if (destination_path[0] != '\0') {
         char *cur = destination_path + strlen(destination_path) - 1;
         // strip all trailing backslashes (if any)
@@ -2725,6 +2731,11 @@ install_game_flow(const char *title, struct GameCatalog *cat, int game)
             break;
         } else if (ch == KEY_ENTER) {
             // TODO: Check free disk space and other sanity checks
+
+            if (ipc_buffer) {
+                // If we have an IPC buffer, remember the destination path
+                _fmemcpy(ipc_buffer->copy_destination_path, destination_path, sizeof(ipc_buffer->copy_destination_path));
+            }
 
             draw_statusbar_internal(NO_KEYS, NULL);
 

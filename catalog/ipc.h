@@ -43,4 +43,6 @@ struct IPCBuffer {
     uint8_t menu_trail_len;
 
     uint8_t menu_mode;
+
+    char copy_destination_path[80];
 };
