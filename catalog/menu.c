@@ -1265,123 +1265,105 @@ store_color_palette()
     }
 }
 
-/**
- * strcasestr() from musl libc
- *
- * Copyright © 2005-2012 Rich Felker
- *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sublicense, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- **/
-char *
-strcasestr(const char *h, const char *n)
+static bool
+char_equals(unsigned char haystack, char needle)
 {
-    size_t l = strlen(n);
-    for (; *h; h++) if (!strncasecmp(h, n, l)) return (char *)h;
-    return 0;
+    if (haystack & 0x80) {
+        // Normalize non-ASCII haystack characters
+        // https://de.wikipedia.org/wiki/Codepage_850
+
+        // Just a subset of characters used in the 2023 demo disc,
+        // to support searching with ASCII-only characters. If new
+        // non-ASCII characters are added to the metadata, this
+        // might need adjusting.
+
+        if (haystack == 0xA1) haystack = 'i';
+        if (haystack == 0x89) haystack = 'e';
+        if (haystack == 0x8A) haystack = 'e';
+        if (haystack == 0x84) haystack = 'a';
+    }
+
+    return (tolower(haystack) == tolower(needle));
 }
 
-static int
+static const char *
+find_string(const char *h, const char *n)
+{
+    // This is -of course- not even trying to be efficient
+
+    ssize_t l = strlen(n);
+    ssize_t k = strlen(h);
+
+    for (ssize_t i=0; i<k-l; ++i) {
+        ssize_t j;
+        for (j=0; j<l; ++j) {
+            if (!char_equals(h[i+j], n[j])) {
+                break;
+            }
+        }
+        if (j == l) {
+            return h + i;
+        }
+    }
+
+    return NULL;
+}
+
+static bool
 match_game(const struct GameCatalog *cat, int game_idx, struct SearchState *search)
 {
     const char *name = cat->names->d[game_idx];
-    return (strcasestr(name, search->search_str) != NULL);
+    return (find_string(name, search->search_str) != NULL);
 }
 
-static int
+static bool
 match_subgroup(const struct GameCatalog *cat, int title_idx, struct SearchState *search)
 {
     const char *name = cat->strings->d[title_idx];
-    return (strcasestr(name, search->search_str) != NULL);
+    return (find_string(name, search->search_str) != NULL);
 }
 
+static bool
+match_cursor(struct ChoiceDialogState *state, int cursor)
+{
+    if (cursor == 0) {
+        // first item (".." or "exit") never matches
+        return false;
+    }
+
+    if (state->here->num_children) {
+        int game_idx = state->here->children[cursor-1];
+        return match_game(state->cat, game_idx, &state->search);
+    } else if (state->here->num_subgroups) {
+        int title_idx = state->here->subgroups[cursor-1]->title_idx;
+        return match_subgroup(state->cat, title_idx, &state->search);
+    }
+
+    return false;
+}
 
 static void
-search_forward_wrap_around(struct ChoiceDialogState *state)
+search_next(struct ChoiceDialogState *state, bool wrap_around)
 {
-    if (state->here->num_children) {
-        // start searching current or forward (with wrapping)
-        for (int i=state->cursor - 1; i<state->here->num_children; ++i) {
-            int game_idx = state->here->children[i];
-            if (match_game(state->cat, game_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
-        }
+    if (!state->here) {
+        return;
+    }
 
-        // wrap around search
-        for (int i=0; i<state->cursor - 1; ++i) {
-            int game_idx = state->here->children[i];
-            if (match_game(state->cat, game_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
-        }
-    } else {
-        // group search
+    // + 1 for the "back" item, and by default a category either has only
+    // subgroups or only children, so we can just sum them up here
+    int count = 1 + state->here->num_children + state->here->num_subgroups;
 
-        // start searching current or forward (with wrapping)
-        for (int i=state->cursor - 1; i<state->here->num_subgroups; ++i) {
-            int title_idx = state->here->subgroups[i]->title_idx;
-            if (match_subgroup(state->cat, title_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
-        }
-
-        // wrap around search
-        for (int i=0; i<state->cursor - 1; ++i) {
-            int title_idx = state->here->subgroups[i]->title_idx;
-            if (match_subgroup(state->cat, title_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
+    for (int i=state->cursor + 1; i<count; ++i) {
+        if (match_cursor(state, i)) {
+            state->cursor = i;
+            return;
         }
     }
-}
 
-static void
-search_next(struct ChoiceDialogState *state)
-{
-    if (state->here->num_children) {
-        // search for next without exiting search
-        for (int i=state->cursor - 1 + 1; i<state->here->num_children; ++i) {
-            int game_idx = state->here->children[i];
-            if (match_game(state->cat, game_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
-        }
-    } else {
-        // group search
-
-        // search for next without exiting search
-        for (int i=state->cursor - 1 + 1; i<state->here->num_subgroups; ++i) {
-            int title_idx = state->here->subgroups[i]->title_idx;
-            if (match_subgroup(state->cat, title_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
+    if (wrap_around) {
+        for (int i=0; i<state->cursor; ++i) {
+            if (match_cursor(state, i)) {
+                state->cursor = i;
                 return;
             }
         }
@@ -1391,27 +1373,14 @@ search_next(struct ChoiceDialogState *state)
 static void
 search_previous(struct ChoiceDialogState *state)
 {
-    if (state->here->num_children) {
-        // search for previous without exiting search
-        for (int i=state->cursor - 1 - 1; i>= 0; --i) {
-            int game_idx = state->here->children[i];
-            if (match_game(state->cat, game_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
-        }
-    } else {
-        // group search
+    if (!state->here) {
+        return;
+    }
 
-        // search for previous without exiting search
-        for (int i=state->cursor - 1 - 1; i>= 0; --i) {
-            int title_idx = state->here->subgroups[i]->title_idx;
-            if (match_subgroup(state->cat, title_idx, &state->search)) {
-                /* + 1 because of ".." navigation */
-                state->cursor = i + 1;
-                return;
-            }
+    for (int i=state->cursor - 1; i>=0; --i) {
+        if (match_cursor(state, i)) {
+            state->cursor = i;
+            return;
         }
     }
 }
@@ -1454,7 +1423,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
 
     if (state->search.now_searching) {
         if (ch == KEY_DOWN) {
-            search_next(state);
+            search_next(state, false);
             screenshot_idx = 0;
         } else if (ch == KEY_UP) {
             search_previous(state);
@@ -1481,7 +1450,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->cursor = state->search.saved_cursor;
             state->offset = state->search.saved_offset;
 
-            search_forward_wrap_around(state);
+            search_next(state, true);
         } else if (state->search.search_pos < sizeof(state->search.search_str) - 1 &&
                     ((ch >= 'a' && ch <= 'z') ||
                      (ch >= 'A' && ch <= 'Z') ||
@@ -1495,7 +1464,7 @@ choice_dialog_handle_input(struct ChoiceDialogState *state, int n)
             state->search.search_str[state->search.search_pos++] = ch;
             state->search.search_str[state->search.search_pos] = '\0';
 
-            search_forward_wrap_around(state);
+            search_next(state, true);
         }
 
         return 0;
