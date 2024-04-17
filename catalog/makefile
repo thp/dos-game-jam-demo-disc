@@ -29,7 +29,7 @@ SAVEGAMES += DEMO2023/FATUMA/HISCORE.DAT
 
 extra: default pcatalog
 
-menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv credits.txt png2dat.py cntshots.py gamectlg.dat config.h makefile.dos
+menu_src.zip: makefile $(wildcard *.c *.h *.s) csv2dat.py gamectlg.csv readme.txt png2dat.py cntshots.py gamectlg.dat config.h makefile.dos
 	zip $@ $^
 
 config.h: config.h.in
