@@ -14,7 +14,8 @@ with open(args.infile) as fp:
     for parts in reader:
         print(parts)
         d = dict(parts)
-        items.append((d['Name'].lower(), d['Name'], d['URL'], d['Author']))
+        if d['Visible'] == 'Y':
+            items.append((d['Name'].lower(), d['Name'], d['URL'], d['Author']))
 
 with open(args.outfile, 'w') as fp:
     for _, name, url, author in sorted(items):
